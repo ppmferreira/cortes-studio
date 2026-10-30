@@ -7,6 +7,16 @@
 - **Primeira vez / outro computador:** `instalar.bat` (ffmpeg via winget, `.venv`, dependências do `requirements.txt`, bibliotecas CUDA da NVIDIA). Requer Python 3.10+, Node.js 20+ (para compilar o painel) e Windows.
 - Só pode haver **um** servidor na porta 8765. Se aparecer erro de porta em uso, já existe um rodando (inclusive oculto).
 
+## Linha de comando (sem o painel)
+
+O pipeline também roda sozinho, a partir de `cortes.py`:
+
+```
+python cortes.py transcrever|selecionar|cortar|tudo [arquivo]   # sem arquivo, processa tudo que está em entradapython cortes.py selecionar entrada\episodio.mp4 --manual         # só transcreve e grava trabalho\episodio	ranscricao.txt
+```
+
+`rodar.bat` roda `tudo`. Com `--manual` você pede os cortes ao Claude numa conversa, salva `trabalho\<episódio>\cortes.json` e roda `cortar`. Os resultados intermediários ficam em `trabalho\` e são reaproveitados (apague `cortes.json` para escolher de novo; mude a configuração e rode `cortar` para refazer só os vídeos). Para escolher cortes e analisar é preciso o Claude conectado (conta ou chave de API em `chave_api.txt` / variável `ANTHROPIC_API_KEY`).
+
 ## Reiniciar com segurança
 
 Mudanças no backend (`servidor.py`, `cortes.py`) só valem depois de reiniciar; mudanças no painel só pedem `npm run build` e recarregar a página.
