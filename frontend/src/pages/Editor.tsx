@@ -4,7 +4,8 @@ import { CorteIADialog } from '../components/CorteIADialog'
 import { GerarDialog } from '../components/GerarDialog'
 import type { Pedido } from '../components/GerarDialog'
 import { Previa } from '../components/Previa'
-import { lacunas, mantidos } from '../lib/trechos'
+import { lacunas, mantidos, tirar } from '../lib/trechos'
+import type { TrechoSel } from '../lib/trechos'
 import { NotaChip, ViralCard } from '../components/ViralCard'
 import { TranscreverBanner } from '../components/TranscreverBanner'
 import { ProcessPanel } from '../components/ProcessPanel'
@@ -14,7 +15,7 @@ import { VELOCIDADES } from '../components/TemplateDialog'
 import { Track } from '../components/Track'
 import { useConfirmar, usePerguntar } from '../ui/Confirm'
 import { Icon } from '../ui/Icon'
-import { Badge, Button, Chip } from '../ui/kit'
+import { Badge, Button, Chip, Dialog } from '../ui/kit'
 import type { Analise, Corte, Episodio, Etapa, Job, OpcoesRender, Palavra, Segmento, StatusRender, Template } from '../types'
 
 type Aba = 'cortes' | 'transcricao' | 'processo' | 'videos'
@@ -320,6 +321,31 @@ export function Editor({ ep, job, episodios, templates, temChave, aoRodar, aoLot
     : focoFino === 'fim'
       ? { w0: Math.max(0, c.fim - larguraFino), w1: Math.min(limite || c.fim + larguraFino, c.fim + larguraFino) }
       : { w0: Math.max(0, c.inicio - 20), w1: Math.min(limite || c.fim + 20, c.fim + 20) }) : null
+  const [seg, setSeg] = useState<TrechoSel | null>(null)         // parte mantida ou buraco selecionado no ajuste fino
+  const [atalhos, setAtalhos] = useState(false)
+  useEffect(() => { setSeg(null) }, [sel])
+  /** Arrastar a borda de uma parte mantida: aumenta ou diminui só aquele trecho (sem passar do vizinho). */
+  const mudarTrecho = (i: number, k: number, lado: 'a' | 'b', s: number) => {
+    const x = cortes[i]
+    if (!x) return
+    const ps = mantidos(x).map(p => [...p] as [number, number])
+    const prev = ps[k - 1], prox = ps[k + 1]
+    if (lado === 'a') ps[k][0] = Math.min(Math.max(s, prev ? prev[1] + 0.1 : x.inicio), ps[k][1] - 0.5)
+    else ps[k][1] = Math.max(Math.min(s, prox ? prox[0] - 0.1 : x.fim), ps[k][0] + 0.5)
+    editar(i, { trechos: ps })
+    setSeg(g => (g && g.tipo === 'parte' ? { ...g, a: ps[k][0], b: ps[k][1] } : g))
+  }
+  /** Tira do corte o intervalo marcado ou a parte selecionada. */
+  const tirarSelecao = () => {
+    if (sel === null || !c) return
+    const alvo = marca && marca[1] - marca[0] >= 0.5 ? marca : seg && seg.tipo === 'parte' ? [seg.a, seg.b] as [number, number] : null
+    if (!alvo) return
+    const novo = tirar(c, alvo[0], alvo[1])
+    if (!novo.length) return
+    editar(sel, { trechos: novo }); setMarca(null); setSeg(null)
+  }
+  const devolverSelecao = () => { if (sel !== null && seg?.tipo === 'gap') { restaurarLacuna(sel, seg.a, seg.b); setSeg(null) } }
+
   /** Clicar num buraco do corte devolve aquele pedaço. */
   const restaurarLacuna = (i: number, g0: number, g1: number) => {
     const x = cortes[i]
@@ -332,6 +358,28 @@ export function Editor({ ep, job, episodios, templates, temChave, aoRodar, aoLot
     }
     editar(i, { trechos: fundidas.length === 1 && fundidas[0][0] <= x.inicio + 0.05 && fundidas[0][1] >= x.fim - 0.05 ? null : fundidas })
   }
+  useEffect(() => {
+    const f = (e: KeyboardEvent) => {
+      const alvo = e.target as HTMLElement | null
+      if (alvo?.closest?.('input, textarea, select, dialog, [contenteditable]') || e.ctrlKey || e.metaKey || e.altKey) return
+      const tecla = e.key.toLowerCase()
+      if (tecla === '?') { e.preventDefault(); setAtalhos(a => !a); return }
+      if (sel === null || !c) return
+      const p = player.current
+      const ag = p ? p.currentTime : 0
+      if (tecla === '[') { e.preventDefault(); const a = +ag.toFixed(1); setMarca([a, Math.max(marca?.[1] ?? 0, a + 1)]) }
+      else if (tecla === ']') { e.preventDefault(); const b = +ag.toFixed(1); setMarca([Math.min(marca?.[0] ?? b - 5, b - 0.5), b]) }
+      else if (tecla === 'x' || tecla === 'delete') { e.preventDefault(); tirarSelecao() }
+      else if (tecla === 'd') { e.preventDefault(); devolverSelecao() }
+      else if (tecla === 'escape') { setMarca(null); setSeg(null) }
+      else if (tecla === 'm') { e.preventDefault(); void melhorar(c.id ? [c.id] : []) }
+      else if (tecla === 'home') { e.preventDefault(); if (p) p.currentTime = c.inicio }
+      else if (tecla === 'end') { e.preventDefault(); if (p) p.currentTime = Math.max(c.inicio, c.fim - 1) }
+    }
+    window.addEventListener('keydown', f)
+    return () => window.removeEventListener('keydown', f)
+  })
+
   const pendentes = status ? cortes.filter(x => status.cortes[x.id]?.estado !== 'pronto').length : null
 
   return (
@@ -404,14 +452,54 @@ export function Editor({ ep, job, episodios, templates, temChave, aoRodar, aoLot
                   </>}
                 </span></div>
               <Track fino somenteSel w0={janela.w0} w1={janela.w1} t={t} cortes={cortes} sel={sel}
-                     marca={marca} aoMarcar={(a, b) => setMarca([a, b])} aoRestaurar={restaurarLacuna}
+                     marca={marca} aoMarcar={(a, b) => setMarca([a, b])} segSel={seg} aoSegmento={setSeg} aoMudarTrecho={mudarTrecho}
                      aoBuscar={s => ir(s)} aoSelecionar={() => undefined} aoMudar={mudarLimite} />
             </>
           )}
+          {c && sel !== null && (seg || (marca && marca[1] - marca[0] >= 0.5)) && (
+            <div className="segbar" role="toolbar" aria-label="Ações do trecho selecionado">
+              {marca && marca[1] - marca[0] >= 0.5 ? (
+                <>
+                  <span><b>Marcado</b> {hms(marca[0])} – {hms(marca[1])} ({Math.round(marca[1] - marca[0])} s)</span>
+                  <Button size="sm" variant="filled" icon="scissors" onClick={tirarSelecao}>Tirar do corte <kbd>X</kbd></Button>
+                  <Button size="sm" variant="text" onClick={() => setMarca(null)}>Limpar <kbd>Esc</kbd></Button>
+                </>
+              ) : seg?.tipo === 'gap' ? (
+                <>
+                  <span><b>Trecho pulado</b> {hms(seg.a)} – {hms(seg.b)} ({Math.round(seg.b - seg.a)} s)</span>
+                  <Button size="sm" variant="filled" onClick={devolverSelecao}>↺ Devolver ao corte <kbd>D</kbd></Button>
+                  <Button size="sm" variant="text" onClick={() => ir(seg.a)}>Ver aqui</Button>
+                  <Button size="sm" variant="text" onClick={() => setSeg(null)}>Fechar <kbd>Esc</kbd></Button>
+                </>
+              ) : seg ? (
+                <>
+                  <span><b>Trecho mantido</b> {hms(seg.a)} – {hms(seg.b)} ({Math.round(seg.b - seg.a)} s) · arraste as bordas para aumentar ou diminuir</span>
+                  <Button size="sm" variant="filled" icon="scissors" disabled={mantidos(c).length < 2} onClick={tirarSelecao}>Tirar do corte <kbd>X</kbd></Button>
+                  <Button size="sm" variant="text" onClick={() => ir(seg.a)}>Ver aqui</Button>
+                  <Button size="sm" variant="text" onClick={() => setSeg(null)}>Fechar <kbd>Esc</kbd></Button>
+                </>
+              ) : null}
+            </div>
+          )}
           <div className="shortcuts t-meta">
-            <span><kbd>Espaço</kbd> tocar/pausar</span><span><kbd>←</kbd><kbd>→</kbd> ±5 s (<kbd>Shift</kbd> ±1 s)</span>
-            <span><kbd>Ctrl</kbd>+<kbd>Z</kbd> desfaz, <kbd>Ctrl</kbd>+<kbd>Y</kbd> refaz</span><span><kbd>Shift</kbd>+arrastar na faixa: marcar trecho para tirar</span><span>passe o mouse num buraco e clique em ↺ devolver</span><span><kbd>I</kbd> início aqui</span><span><kbd>O</kbd> fim aqui</span><span><kbd>N</kbd> novo corte</span><span><kbd>S</kbd> dividir o corte aqui</span>
+            <span><kbd>Espaço</kbd> tocar</span><span><kbd>I</kbd> <kbd>O</kbd> início/fim aqui</span><span><kbd>[</kbd> <kbd>]</kbd> marcar trecho</span><span><kbd>X</kbd> tirar</span><span><kbd>D</kbd> devolver</span>
+            <span><kbd>Ctrl</kbd>+<kbd>Z</kbd> desfazer</span>
+            <button type="button" className="shortcuts__todos" onClick={() => setAtalhos(true)}>Todos os atalhos <kbd>?</kbd></button>
           </div>
+          <Dialog aberto={atalhos} titulo="Atalhos do editor" aoFechar={() => setAtalhos(false)}
+                  rodape={<Button onClick={() => setAtalhos(false)}>Fechar</Button>}>
+            <dl className="atalhos">
+              {([
+                ['Espaço', 'tocar / pausar'], ['← →', 'voltar / avançar 5 s (com Shift, 1 s)'], ['Home / End', 'ir ao começo / ao fim do corte'],
+                ['I / O', 'início / fim do corte no ponto atual'], ['[ / ]', 'marcar o começo / o fim de um trecho a tirar'],
+                ['X ou Delete', 'tirar do corte o trecho marcado (ou a parte selecionada)'], ['D', 'devolver ao corte o buraco selecionado'],
+                ['Esc', 'limpar a marca e a seleção'], ['N', 'novo corte aqui'], ['S', 'dividir o corte no ponto atual'],
+                ['M', 'melhorar o corte com o Claude'], ['Ctrl+Z / Ctrl+Y', 'desfazer / refazer'],
+                ['Shift + arrastar', 'marcar um trecho na faixa do ajuste fino'], ['Clique num trecho', 'seleciona a parte mantida ou o buraco; arraste as bordas para aumentar ou diminuir'],
+                ['?', 'mostrar / esconder esta lista'],
+              ] as [string, string][]).map(([k, v]) => <div key={k}><dt><kbd>{k}</kbd></dt><dd>{v}</dd></div>)}
+            </dl>
+          </Dialog>
         </section>
 
         {c && sel !== null ? (
@@ -696,10 +784,7 @@ function CutDetail({ marca, aoMarca, i, c, ep, trans, video, tocando, agora, ana
                 <input className="input t-num" type="number" step="0.1" value={rem[1]} onChange={e => setRem([rem[0], Number(e.target.value)])} /></label>
               <Button size="sm" variant="text" onClick={() => setRem([rem[0], +agora().toFixed(1)])}>= agora</Button>
               <Button size="sm" icon="scissors" disabled={!(rem[1] - rem[0] >= 0.5)} onClick={() => {
-                const novo = partes.flatMap(([a, b]) => {
-                  if (rem[1] <= a || rem[0] >= b) return [[a, b] as [number, number]]
-                  return ([[a, Math.min(b, rem[0])], [Math.max(a, rem[1]), b]] as [number, number][]).filter(([x, y]) => y - x >= 0.3)
-                })
+                const novo = tirar(c, rem[0], rem[1])
                 if (novo.length) { aoEditar({ trechos: novo }); aoMarca(null) }
               }}>Tirar este trecho</Button>
             </div>

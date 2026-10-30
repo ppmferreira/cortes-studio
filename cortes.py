@@ -1081,7 +1081,13 @@ def trechos_de(c):
     brutos = c.get("trechos") or []
     partes = sorted((max(ini, float(a)), min(fim, float(b))) for a, b in brutos)
     partes = [(a, b) for a, b in partes if b - a >= 0.3]
-    return partes if partes else [(ini, fim)]
+    fundidas = []  # partes coladas (menos de 0,3 s entre elas) viram uma só
+    for a, b in partes:
+        if fundidas and a - fundidas[-1][1] < 0.3:
+            fundidas[-1] = (fundidas[-1][0], max(fundidas[-1][1], b))
+        else:
+            fundidas.append((a, b))
+    return fundidas if fundidas else [(ini, fim)]
 
 
 def duracao_efetiva(c):

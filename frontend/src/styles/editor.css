@@ -123,3 +123,21 @@
 .track__gap { display: grid; place-items: center; overflow: visible; }
 .track__gapbtn { display: none; white-space: nowrap; height: 22px; padding: 0 8px; border: 0; border-radius: 999px; background: #fff; color: #111; font-size: 11px; font-weight: 600; cursor: pointer; box-shadow: 0 1px 4px rgba(0,0,0,.5); z-index: 3; }
 .track__gap:hover .track__gapbtn, .track__gapbtn:focus-visible { display: block; }
+
+/* seleção de trechos no ajuste fino */
+.track__parte { position: absolute; top: 0; bottom: 0; cursor: pointer; border-radius: 2px; }
+.track__parte:hover { background: rgba(255,255,255,.12); }
+.track__gap { cursor: pointer; }
+.track__gap:hover { box-shadow: inset 0 0 0 2px rgba(255,255,255,.6); }
+.track__seg--sel { box-shadow: inset 0 0 0 2px #fff !important; z-index: 1; }
+.track__handle--trecho { transform: translateX(-5px); background: #ffd54f; z-index: 2; }
+.segbar { display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-3); margin-top: var(--sp-3); padding: var(--sp-2) var(--sp-3); border-radius: 10px; background: var(--surface-3); }
+.segbar > span { margin-right: auto; }
+.segbar kbd, .shortcuts__todos kbd { margin-left: 6px; }
+.shortcuts__todos { margin-left: auto; border: 0; background: transparent; color: var(--text-2); cursor: pointer; font: inherit; text-decoration: underline; }
+.atalhos { display: grid; gap: var(--sp-2); margin: 0; }
+.atalhos > div { display: grid; grid-template-columns: 170px 1fr; gap: var(--sp-3); align-items: baseline; }
+.atalhos dt, .atalhos dd { margin: 0; }
+
+.track__grab { position: absolute; top: -8px; left: -9px; width: 18px; height: calc(100% + 16px); cursor: grab; pointer-events: auto; touch-action: none; }
+.track__grab:active { cursor: grabbing; }

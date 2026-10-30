@@ -1,6 +1,7 @@
 import { useRef } from 'react'
 import { hms } from '../api'
-import { lacunas } from '../lib/trechos'
+import { lacunas, mantidos } from '../lib/trechos'
+import type { TrechoSel } from '../lib/trechos'
 import type { Corte } from '../types'
 
 type Lado = 'inicio' | 'fim'
@@ -18,17 +19,21 @@ interface Props {
   aoMudar: (i: number, lado: Lado, s: number) => void
   marca?: [number, number] | null                     // trecho marcado (Shift + arrastar) para tirar do corte
   aoMarcar?: (a: number, b: number) => void
-  aoRestaurar?: (i: number, a: number, b: number) => void   // clicar num buraco o devolve ao corte
+  segSel?: TrechoSel | null                                  // parte mantida ou buraco selecionado
+  aoSegmento?: (s: TrechoSel) => void
+  aoMudarTrecho?: (i: number, k: number, lado: 'a' | 'b', s: number) => void   // arrastar a borda de uma parte
 }
 
 const PASSOS_FINO = [1, 2, 5, 10, 15, 30]
 const PASSOS_GERAL = [10, 30, 60, 120, 300, 600, 900, 1800, 3600]
 
 /** Linha do tempo com régua, blocos de corte e alças arrastáveis no corte selecionado. */
-export function Track({ w0, w1, t, cortes, sel, somenteSel, fino, aoBuscar, aoSelecionar, aoMudar, marca, aoMarcar, aoRestaurar }: Props) {
+export function Track({ w0, w1, t, cortes, sel, somenteSel, fino, aoBuscar, aoSelecionar, aoMudar, marca, aoMarcar, segSel, aoSegmento, aoMudarTrecho }: Props) {
   const lane = useRef<HTMLDivElement>(null)
   const arrasto = useRef<{ i: number; lado: Lado } | null>(null)
   const marcando = useRef<number | null>(null)
+  const movendo = useRef(false)   // arrastando a cabeça de reprodução
+  const arrastoT = useRef<{ i: number; k: number; lado: 'a' | 'b' } | null>(null)
   const span = Math.max(w1 - w0, 1)
   const x = (s: number) => ((s - w0) / span) * 100
   const tempoDe = (cx: number) => {
@@ -71,15 +76,32 @@ export function Track({ w0, w1, t, cortes, sel, somenteSel, fino, aoBuscar, aoSe
                  style={{ left: `${x(a)}%`, width: `${Math.max(x(b) - x(a), 0.5)}%` }}
                  title={`${i + 1}. ${c.titulo}`}
                  onClick={e => { e.stopPropagation(); aoSelecionar(i) }}>
-              {lacunas(c).map(([g0, g1], k) => (
-                <i key={k} className="track__gap" title="Trecho pulado no vídeo final"
-                   style={{ left: `${((g0 - c.inicio) / (c.fim - c.inicio)) * 100}%`, width: `${((g1 - g0) / (c.fim - c.inicio)) * 100}%` }}>
-                  {aoRestaurar && fino && (
-                    <button type="button" className="track__gapbtn" aria-label="Devolver este trecho ao corte" title="Devolver este trecho ao corte"
-                            onPointerDown={e => e.stopPropagation()} onClick={e => { e.stopPropagation(); aoRestaurar(i, g0, g1) }}>↺ devolver</button>
-                  )}
-                </i>
+              {fino && sel === i && aoSegmento && c.trechos && c.trechos.length > 0 && mantidos(c).map(([p0, p1], k) => (
+                <i key={'p' + k} className={'track__parte' + (segSel?.tipo === 'parte' && Math.abs(segSel.a - p0) < 0.05 ? ' track__seg--sel' : '')}
+                   style={{ left: `${((p0 - c.inicio) / (c.fim - c.inicio)) * 100}%`, width: `${((p1 - p0) / (c.fim - c.inicio)) * 100}%` }}
+                   title="Parte mantida: clique para selecionar"
+                   onClick={() => aoSegmento({ tipo: 'parte', a: p0, b: p1 })} />
               ))}
+              {lacunas(c).map(([g0, g1], k) => (
+                <i key={k} className={'track__gap' + (segSel?.tipo === 'gap' && Math.abs(segSel.a - g0) < 0.05 ? ' track__seg--sel' : '')}
+                   title="Trecho pulado: clique para selecionar e devolver"
+                   style={{ left: `${((g0 - c.inicio) / (c.fim - c.inicio)) * 100}%`, width: `${((g1 - g0) / (c.fim - c.inicio)) * 100}%` }}
+                   onClick={() => { if (fino && aoSegmento) aoSegmento({ tipo: 'gap', a: g0, b: g1 }) }} />
+              ))}
+              {fino && sel === i && aoMudarTrecho && c.trechos && c.trechos.length > 0 && mantidos(c).flatMap(([p0, p1], k, todas) => {
+                const hs = []
+                if (p0 > c.inicio + 0.05) hs.push(['a', p0] as const)
+                if (p1 < c.fim - 0.05) hs.push(['b', p1] as const)
+                return hs.map(([lado, pos]) => (
+                  <span key={k + lado} className="track__handle track__handle--trecho" role="slider" aria-label={lado === 'a' ? `Começo da parte ${k + 1}` : `Fim da parte ${k + 1} de ${todas.length}`}
+                        aria-valuenow={Math.round(pos)} title="Arraste para aumentar ou diminuir este trecho"
+                        style={{ left: `${((pos - c.inicio) / (c.fim - c.inicio)) * 100}%` }}
+                        onClick={e => e.stopPropagation()}
+                        onPointerDown={e => { e.stopPropagation(); e.currentTarget.setPointerCapture(e.pointerId); arrastoT.current = { i, k, lado } }}
+                        onPointerMove={e => { if (arrastoT.current) aoMudarTrecho(i, k, lado, Math.round(tempoDe(e.clientX) * 10) / 10) }}
+                        onPointerUp={e => { e.currentTarget.releasePointerCapture(e.pointerId); arrastoT.current = null }} />
+                ))
+              })}
               <span className="track__num">{i + 1}</span>
               {sel === i && c.inicio >= w0 && alca(i, 'inicio')}
               {sel === i && c.fim <= w1 && alca(i, 'fim')}
@@ -89,7 +111,15 @@ export function Track({ w0, w1, t, cortes, sel, somenteSel, fino, aoBuscar, aoSe
         {marca && marca[1] > w0 && marca[0] < w1 && (
           <div className="track__marca" style={{ left: `${x(Math.max(marca[0], w0))}%`, width: `${x(Math.min(marca[1], w1)) - x(Math.max(marca[0], w0))}%` }} />
         )}
-        {t >= w0 && t <= w1 && <div className="track__head" style={{ left: `${x(t)}%` }} />}
+        {t >= w0 && t <= w1 && (
+          <div className="track__head" style={{ left: `${x(t)}%` }}>
+            <span className="track__grab" role="slider" aria-label="Posição do vídeo (arraste)" aria-valuenow={Math.round(t)} title="Arraste para mover o vídeo"
+                  onClick={e => e.stopPropagation()}
+                  onPointerDown={e => { e.stopPropagation(); e.currentTarget.setPointerCapture(e.pointerId); movendo.current = true }}
+                  onPointerMove={e => { if (movendo.current) aoBuscar(tempoDe(e.clientX)) }}
+                  onPointerUp={e => { e.currentTarget.releasePointerCapture(e.pointerId); movendo.current = false }} />
+          </div>
+        )}
       </div>
     </div>
   )

@@ -78,3 +78,5 @@ Lista: `.listbar` (abas Shorts | Longos, *Criar com IA*, menu ⋯). Detalhe do c
 Editor: o ajuste fino tem foco (`focoFino`: tudo, começo, fim) e largura (`larguraFino`); `Track` aceita `marca`/`aoMarcar` (Shift + arrastar) e `aoRestaurar` (clique no buraco). A prévia do corte tem a barra `ScrubCorte`; o pulo dos buracos roda num laço `requestAnimationFrame` enquanto `tocando`.
 
 Histórico de edição do `Editor`: `setCortes` empilha o estado anterior (`hist`, até 100 passos, 0,5 s para agrupar); `carregarCortes` carrega do disco e zera o histórico. `desfazer`/`refazer` ficam em Ctrl+Z / Ctrl+Y e nos botões do Ajuste fino. O buraco é devolvido pelo botão `.track__gapbtn` (`aoRestaurar`), visível ao passar o mouse.
+
+Ajuste fino: `TrechoSel` (`lib/trechos.ts`) é a parte mantida ou o buraco selecionado; `Track` recebe `segSel`, `aoSegmento`, `aoMudarTrecho` (alças `.track__handle--trecho`) e a cabeça `.track__grab` é arrastável. `tirar(c, a, b)` calcula as partes mantidas sem um intervalo; `mantidos()` e `trechos_de()` (backend) fundem partes coladas.

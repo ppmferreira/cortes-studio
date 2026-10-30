@@ -2,6 +2,11 @@
 
 Formato: data · o que mudou. Mais recente primeiro. Atualize junto com cada alteração.
 
+## 2026-10-30 (trechos clicáveis, cabeça arrastável e atalhos)
+- **Trechos clicáveis no Ajuste fino:** clicar numa parte mantida ou num buraco o seleciona. Uma barra de ação aparece com **↺ Devolver ao corte** (buraco) ou **Tirar do corte** (parte). As **bordas das partes são arrastáveis** (alças amarelas) para aumentar ou diminuir cada trecho, sem passar do vizinho. Partes coladas (menos de 0,3 s entre elas) viram uma só.
+- **Cabeça de reprodução arrastável** (o ponto branco) nas duas linhas do tempo: arrastar move o vídeo.
+- **Atalhos novos:** `[` e `]` marcam o começo e o fim de um trecho a tirar, `X`/`Delete` tira, `D` devolve o buraco selecionado, `Esc` limpa, `Home`/`End` vão ao começo/fim do corte, `M` melhora com o Claude, `?` abre a lista completa. A linha de atalhos ficou compacta, com o botão *Todos os atalhos*.
+
 ## 2026-10-30 (desfazer e refazer)
 - **Ctrl+Z / Ctrl+Y** (e os botões *Desfazer* / *Refazer* no Ajuste fino) desfazem e refazem qualquer edição dos cortes no editor: limites, velocidade, trechos tirados, dividir, remover, novo, texto. Até 100 passos; edições seguidas em menos de 0,5 s (arrastar uma alça) contam como um passo. O histórico zera ao salvar, recarregar ou trocar de episódio. Nos campos de texto vale o desfazer do navegador.
 - **Devolver um buraco** agora é pelo botão **↺ devolver**, que aparece ao passar o mouse no buraco do Ajuste fino. Clicar no buraco não faz mais nada (antes, um clique ao tentar selecionar ou arrastar o corte desfazia os trechos tirados). A devolução também pode ser desfeita com Ctrl+Z.
