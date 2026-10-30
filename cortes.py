@@ -49,12 +49,14 @@ CONFIG_PADRAO = {
     "idioma": "pt",
     "modelo_whisper": "medium",        # "large-v3" é mais preciso, mas pede ~5GB de VRAM; "small" é mais rápido
     "modelo_claude": "claude-sonnet-5-5",
+    "esforco_claude": "medium",        # raciocínio do Claude na conta: low (mais rápido), medium, high
     # --- estilo de corte (definidos pelo template do episódio)
     "qtd_cortes": 6,
     "duracao_min": 30,                 # segundos
     "duracao_max": 90,                 # segundos
     "formato": "vertical",             # "vertical" (9:16) ou "horizontal"
     "legendas": True,
+    "legendas_longo": False,           # vídeos longos (16:9) saem sem legenda queimada, a menos que ligue
     "palavras_por_legenda": 3,
     "fonte_legenda": "Arial",
     "tamanho_legenda": 14,             # relativo a uma tela de 1080 de largura (ASS PlayResX=1080)
@@ -64,43 +66,91 @@ CONFIG_PADRAO = {
     "folga_fim": 0.35,                 # segundos depois da última palavra
     "velocidade_padrao": 1.0,          # velocidade inicial dos cortes novos (0.5 a 2.0)
     "instrucoes_extras": "",           # ex.: "priorize momentos engraçados"
+    "nota_minima": 7,                  # meta de potencial viral (0-10): marca cortes abaixo e filtra ao pedir cortes ao Claude
     "usar_logo": True,                 # (template) mostra a logo da marca nos cortes
     # --- marca (geral): uma logo para todos os templates, guardada em logos/
     "logo": "",                        # nome do arquivo em logos/ ("" = sem logo)
     "logo_posicao": "topo-centro",     # topo|baixo + esquerda|centro|direita, ou "centro"
     "logo_tamanho": 22,                # % da largura do vídeo
     "logo_opacidade": 100,             # 10 a 100
+    "logo_posicao_longo": "topo-direita",  # vídeos longos (16:9): um canto (topo/baixo + esquerda/direita)
+    "logo_tamanho_longo": 9,           # % da largura do vídeo longo
 }
 
 _ESTILO = ("qtd_cortes", "duracao_min", "duracao_max", "formato", "legendas", "palavras_por_legenda", "tamanho_legenda",
-           "fonte_legenda", "cor_legenda", "posicao_legenda", "folga_inicio", "folga_fim", "velocidade_padrao", "usar_logo")
-CAMPOS_LOGO = ("usar_logo", "logo", "logo_posicao", "logo_tamanho", "logo_opacidade")
+           "fonte_legenda", "cor_legenda", "posicao_legenda", "folga_inicio", "folga_fim", "velocidade_padrao", "usar_logo", "nota_minima")
+CAMPOS_LOGO = ("usar_logo", "logo", "logo_posicao", "logo_tamanho", "logo_opacidade", "logo_posicao_longo", "logo_tamanho_longo")
 # configuração que o editor recebe: estilo global + o prompt do template escolhido
 CAMPOS_TEMPLATE = _ESTILO + ("instrucoes_extras",)
 # configurações globais (config.json): geral + padrões de geração + vídeo/legenda + marca
-CAMPOS_GERAL = ("idioma", "modelo_whisper", "modelo_claude") + _ESTILO + ("logo", "logo_posicao", "logo_tamanho", "logo_opacidade")
+CAMPOS_GERAL = ("idioma", "modelo_whisper", "modelo_claude") + _ESTILO + ("logo", "logo_posicao", "logo_tamanho", "logo_opacidade", "logo_posicao_longo", "logo_tamanho_longo")
 
 
-def _t(id_, nome, descricao, prompt):
-    return {"id": id_, "nome": nome, "descricao": descricao, "builtin": True, "prompt": prompt}
+def _t(id_, nome, descricao, prompt, tipo="short"):
+    return {"id": id_, "nome": nome, "descricao": descricao, "builtin": True, "prompt": prompt, "tipo": tipo}
 
 
 # Template = só o prompt (briefing) que o Claude segue ao escolher os cortes. Quantidade, duração, formato e
-# legenda são ajustes da geração. Os templates prontos não mudam; os seus ficam em templates.json.
+# legenda são ajustes da geração. `tipo` separa os de Shorts (9:16) dos de vídeos longos (16:9).
+# Os templates prontos não mudam; os seus ficam em templates.json.
 TEMPLATES_BASE = [
-    _t("shorts", "Shorts / Reels / TikTok", "Ganchos fortes e cortes que funcionam sozinhos.",
-       "Comece com um gancho forte nos primeiros 3 segundos. Cada corte deve fazer sentido sozinho, sem precisar do resto do episódio, "
-       "e terminar em uma ideia completa."),
-    _t("viral", "Viral e polêmico", "Frases de impacto, revelações e momentos de reação.",
-       "Priorize frases de impacto, revelações, opiniões fortes e momentos que provoquem reação. Evite pausas, enrolação e apresentações."),
-    _t("debate", "Debate e opinião", "Argumentos completos, com começo, meio e fim.",
-       "Escolha argumentos completos, com começo, meio e fim, opiniões fortes e discordâncias. Evite trechos que dependam do contexto do resto do episódio."),
+    # ---- Shorts / Reels / TikTok
+    _t("shorts", "Shorts / Reels / TikTok", "Gancho forte nos 3 primeiros segundos e ideia completa.",
+       "Priorize trechos que começam com um gancho nos primeiros 3 segundos: uma pergunta, uma afirmação ousada, um número "
+       "surpreendente ou o início de uma história. O corte precisa fazer sentido sozinho, sem depender do resto do episódio, "
+       "e terminar numa ideia fechada (conclusão, punchline ou lição). Corte começos lentos, apresentações, \"então...\", "
+       "\"bom, é isso\" e qualquer enrolação antes do ponto principal."),
+    _t("viral", "Viral e polêmico", "Frases de impacto, opiniões fortes e momentos que dão reação.",
+       "Procure o que as pessoas vão comentar, discordar ou compartilhar: opiniões fortes, revelações, confissões, "
+       "críticas diretas, números absurdos e frases que cabem numa legenda. Dê preferência a trechos com emoção "
+       "visível na voz (indignação, riso, surpresa). Comece no ponto de maior tensão, sem contexto longo. Evite "
+       "ofensas gratuitas a pessoas específicas e afirmações que pareçam factualmente falsas."),
+    _t("historias", "Histórias e causos", "Mini-histórias com início, virada e final.",
+       "Escolha histórias e causos curtos com estrutura clara: situação inicial, complicação, virada e desfecho. "
+       "O corte deve abrir direto na situação interessante (\"teve uma vez que...\") e terminar no desfecho ou na "
+       "frase final que fecha a história. Prefira detalhes concretos, diálogos e reviravoltas. Não corte antes do final da história."),
+    _t("debate", "Debate e opinião", "Argumentos completos, com discordância.",
+       "Escolha trechos em que alguém defende uma posição com argumento completo (tese, motivo e exemplo) ou em que "
+       "há discordância real entre as pessoas. O corte deve conter a pergunta ou provocação que gerou a opinião, "
+       "quando ela for necessária para entender. Evite trechos que dependam de assunto que veio muitos minutos antes."),
     _t("humor", "Humor e piadas", "Piadas com setup e punchline, sem cortar a risada.",
-       "Escolha piadas e situações engraçadas com setup e punchline completos. Termine logo depois da risada."),
-    _t("educativo", "Educativo e dicas", "Explicações claras e dicas práticas.",
-       "Escolha explicações claras, dicas práticas, listas e conselhos que a pessoa possa aplicar."),
-    _t("capitulos", "Capítulos longos", "Trechos completos com tema próprio (use com durações longas).",
-       "Escolha capítulos completos da conversa, cada um com tema próprio, que funcionem como um vídeo independente."),
+       "Escolha piadas e situações engraçadas com setup e punchline completos, incluindo a reação (risada, "
+       "comentário engraçado do outro) logo depois do final. Comece no início do setup e termine pouco depois da risada. "
+       "Prefira humor que funcione sem contexto; descarte piadas internas que só quem viu o resto entende."),
+    _t("educativo", "Educativo e dicas", "Explicações claras e conselhos aplicáveis.",
+       "Escolha explicações claras, dicas práticas, passo a passo, listas e conselhos que a pessoa possa aplicar no dia. "
+       "O corte deve abrir com o problema ou a promessa (\"o erro que quase todo mundo comete é...\") e entregar a solução "
+       "até o fim. Prefira exemplos concretos e números a generalidades."),
+    _t("frases", "Frases de impacto e reflexões", "Trechos curtos e memoráveis, bons para texto na tela.",
+       "Procure frases memoráveis e reflexões que resumem uma ideia em poucas palavras: conselhos de vida, "
+       "verdades incômodas, comparações originais e conclusões marcantes. Prefira trechos curtos, em que quase "
+       "todas as palavras importam, com pausa ou entonação forte no final. Evite divagações longas."),
+    _t("emocional", "Emocional e superação", "Momentos de vulnerabilidade, virada e aprendizado.",
+       "Escolha momentos emocionais genuínos: superação, perda, erro assumido, gratidão, confissão, virada de vida. "
+       "O corte deve deixar claro o que aconteceu, o que a pessoa sentiu e o que aprendeu. Comece no ponto em que a "
+       "emoção começa a aparecer e termine na lição ou no silêncio depois da fala. Evite sensacionalismo e trechos que exponham terceiros."),
+    # ---- Vídeos longos (16:9)
+    _t("capitulos", "Capítulos do episódio", "Divide o episódio em partes com tema próprio.",
+       "Divida a conversa em capítulos independentes, cada um com um tema ou pergunta central, começo natural "
+       "(apresentação do assunto ou pergunta do apresentador) e fechamento (conclusão, mudança de assunto). "
+       "O título deve prometer claramente o que o espectador vai ver. Evite cortar no meio de uma explicação e escolha capítulos que o "
+       "espectador entenda sem ter visto o restante.", "longo"),
+    _t("historia_longa", "Histórias completas", "Uma história inteira, do começo ao fim.",
+       "Escolha as histórias mais fortes contadas no episódio e traga-as por inteiro: contexto, desenvolvimento, clímax "
+       "e desfecho, incluindo a reação e a reflexão depois. Prefira histórias com reviravolta, risco ou emoção. "
+       "O vídeo pode começar um pouco antes, com a pergunta que puxou a história.", "longo"),
+    _t("debate_longo", "Debates e polêmicas", "Discussões longas com lados e conclusão.",
+       "Escolha as discussões mais intensas: temas polêmicos em que há posições diferentes, argumentos e contra-argumentos. "
+       "O vídeo deve ter a pergunta que abriu o debate, o desenvolvimento e um fechamento (consenso, discordância "
+       "declarada ou piada que encerra). Prefira trechos em que as pessoas se respondem diretamente.", "longo"),
+    _t("aula", "Aula e explicação aprofundada", "Um assunto explicado a fundo.",
+       "Escolha trechos em que um assunto é explicado em profundidade, com sequência lógica: o que é, por que importa, "
+       "exemplos e como aplicar. O vídeo deve funcionar como uma aula curta, com começo que apresenta o tema e final que resume ou conclui. "
+       "Evite trechos com muitas interrupções ou mudanças de assunto.", "longo"),
+    _t("convidado", "Melhor do convidado", "Os trechos mais fortes de quem está sendo entrevistado.",
+       "Foque nos momentos em que o convidado é o protagonista: trajetória, bastidores, histórias pessoais, opiniões "
+       "e revelações. O título deve citar o tema e, se possível, a expressão mais forte dele. O vídeo pode incluir a pergunta do "
+       "apresentador no início, mas a maior parte do tempo deve ser do convidado.", "longo"),
 ]
 
 
@@ -131,7 +181,8 @@ def todos_templates():
     usuario = []
     for t in d.get("usuario", []):
         prompt = t.get("prompt") or (t.get("config") or {}).get("instrucoes_extras", "")  # migra templates antigos
-        usuario.append({"id": t["id"], "nome": t["nome"], "descricao": t.get("descricao", ""), "builtin": False, "prompt": prompt})
+        usuario.append({"id": t["id"], "nome": t["nome"], "descricao": t.get("descricao", ""), "builtin": False, "prompt": prompt,
+                        "tipo": t.get("tipo", "short")})
     return TEMPLATES_BASE + usuario, d.get("ativo", "shorts")
 
 
@@ -274,6 +325,27 @@ TRANSCRIÇÃO:
 """
 
 
+PROMPT_LONGO = """Você é editor de vídeos longos para o YouTube a partir de um podcast.
+Abaixo está a transcrição com tempos em segundos no formato [inicio-fim] texto.
+
+Escolha os {qtd} melhores capítulos/trechos para virarem vídeos longos independentes. Regras:
+- Duração de cada vídeo entre {dmin} e {dmax} segundos.
+- Cada vídeo deve ter começo, meio e fim: um assunto, uma história ou um debate completo, que faça sentido sozinho.
+- Comece em um ponto natural (apresentação do tema, pergunta ou história) e termine em uma conclusão, nunca no meio de uma frase.
+- Trechos não podem se sobrepor.
+- Prefira: histórias completas, debates, explicações aprofundadas, polêmicas, momentos marcantes.
+{extras}
+Responda SOMENTE com um JSON válido (lista), sem texto fora do JSON, neste formato:
+[{{"inicio": 123.4, "fim": 1500.0, "titulo": "título do vídeo (até 70 caracteres, chamativo, sem clickbait mentiroso)",
+  "motivo": "por que esse trecho funciona como vídeo longo", "descricao": "descrição do vídeo para o YouTube, com resumo e emojis",
+  "hashtags": ["#exemplo"],
+  "thumb": {{"linha1": "2 a 3 palavras em branco, MAIÚSCULAS", "linha2": "2 a 3 palavras em amarelo, MAIÚSCULAS"}}}}]
+
+TRANSCRIÇÃO:
+{transcricao}
+"""
+
+
 def ajustar_limites(cortes, dados, cfg):
     """Encaixa início/fim nas fronteiras de palavras e limita à duração do episódio."""
     palavras = [w for s in dados["segmentos"] for w in s["palavras"]]
@@ -333,7 +405,9 @@ def consultar_claude(prompt, cfg, modo):
         [claude_cli(), "-p", "--output-format", "json", "--tools", "", "--no-session-persistence",
          # sem prompt de sistema padrão, plugins, MCP nem configurações do projeto: só o necessário
          "--system-prompt", "Você é um editor de cortes de podcast. Responda só o que foi pedido.",
-         "--disable-slash-commands", "--strict-mcp-config", "--setting-sources", ""],
+         "--disable-slash-commands", "--strict-mcp-config", "--setting-sources", "",
+         # modelo e esforço explícitos: sem isso o Claude Code usa o padrão da conta (modelo maior, raciocínio longo, bem mais lento)
+         "--model", cfg["modelo_claude"], "--effort", cfg.get("esforco_claude", "medium")],
         input=prompt, capture_output=True, text=True, encoding="utf-8", timeout=900, creationflags=_SEM_JANELA,
     )
     if CANCELAR.is_set():
@@ -345,6 +419,38 @@ def consultar_claude(prompt, cfg, modo):
     if d.get("is_error"):
         sys.exit(f"Claude respondeu com erro: {d.get('result', '')[:300]}")
     return d["result"]
+
+
+def texto_compacto(segmentos, ini=0.0, fim=None, bloco=25.0):
+    """Transcrição enxuta para o prompt: junta segmentos em blocos de ~25 s, tempos inteiros ([inicio-fim] texto).
+    Gasta bem menos tokens que um tempo com decimais por frase, e o corte é encaixado nas palavras depois."""
+    linhas, atual = [], None
+    for sg in segmentos:
+        if sg["fim"] < ini or (fim is not None and sg["inicio"] > fim):
+            continue
+        if atual is None:
+            atual = [sg["inicio"], sg["fim"], [sg["texto"].strip()]]
+        else:
+            atual[1] = sg["fim"]; atual[2].append(sg["texto"].strip())
+        if atual[1] - atual[0] >= bloco:
+            linhas.append(f"[{atual[0]:.0f}-{atual[1]:.0f}] {' '.join(atual[2])}"); atual = None
+    if atual:
+        linhas.append(f"[{atual[0]:.0f}-{atual[1]:.0f}] {' '.join(atual[2])}")
+    return "\n".join(linhas)
+
+
+def janelas_do_episodio(duracao, dmax, limite=2400):
+    """Episódios longos são lidos em partes (com uma pequena sobreposição), pedidas ao Claude ao mesmo tempo."""
+    if duracao <= limite * 1.25:
+        return [(0.0, float(duracao))]
+    n = -(-int(duracao) // limite)
+    tam, sobra = duracao / n, min(dmax, 180)
+    return [(max(0.0, i * tam - (sobra if i else 0)), min(float(duracao), (i + 1) * tam + (sobra if i < n - 1 else 0))) for i in range(n)]
+
+
+def dividir_cotas(qtd, partes):
+    """Reparte `qtd` cortes entre as partes (as primeiras ficam com o resto)."""
+    return [qtd // partes + (1 if i < qtd % partes else 0) for i in range(partes)]
 
 
 def selecionar(video: Path, cfg, manual=False):
@@ -367,21 +473,47 @@ def selecionar(video: Path, cfg, manual=False):
         sys.exit("Claude não conectado. Clique no ícone da chave no topo do painel e entre com sua conta Claude "
                  "(ou cole uma chave de API), ou monte os cortes manualmente.")
 
-    texto ="\n".join(f"[{s['inicio']:.1f}-{s['fim']:.1f}] {s['texto']}" for s in dados["segmentos"])
     extras = f"- Instruções extras: {cfg['instrucoes_extras']}\n" if cfg["instrucoes_extras"] else ""
     if atuais:  # pede para não repetir o que já foi cortado (e confere depois, sem confiar só no pedido)
         usados = ", ".join(f"{c['inicio']:.0f}-{c['fim']:.0f}" for c in atuais)
         extras += f"- Já existem cortes nestes trechos (segundos): {usados}. Escolha trechos NOVOS, sem se sobrepor a nenhum deles.\n"
-    prompt = PROMPT.format(qtd=cfg["qtd_cortes"], dmin=cfg["duracao_min"], dmax=cfg["duracao_max"],
-                           extras=extras, transcricao=texto)
-    print("[selecionar] consultando Claude ...")
-    progresso(None, "Claude está lendo a transcrição e escolhendo os cortes")
-    bruto = consultar_claude(prompt, cfg, modo)
-    m = re.search(r"\[.*\]", bruto, re.DOTALL)
-    if not m:
-        sys.exit(f"Resposta sem JSON:\n{bruto}")
-    cortes = json.loads(m.group(0))
+    longo = cfg.get("tipo_corte") == "longo"
+    extras += licoes_para_prompt("longo" if longo else "short")
+    qtd_final = cfg["qtd_cortes"]
+    filtrar = bool(cfg.get("filtrar_por_nota")) and float(cfg.get("nota_minima") or 0) > 0 and qtd_final > 1
+    qtd_busca = min(30, qtd_final * 2) if filtrar else qtd_final   # com filtro por nota, pede o dobro e fica com os melhores
+    modelo_prompt = PROMPT_LONGO if longo else PROMPT
+    janelas = janelas_do_episodio(dados["duracao"], cfg["duracao_max"])
+    cotas = dividir_cotas(qtd_busca, len(janelas))
+    if qtd_busca < len(janelas):  # poucos cortes pedidos (ex.: um corte específico): cada parte procura o seu
+        cotas = [1] * len(janelas)
+        extras += "- Se nada neste trecho combinar com o pedido, responda apenas []\n"
+    pedidos = []
+    for (j_ini, j_fim), qtd in zip(janelas, cotas):
+        if qtd <= 0:
+            continue
+        aviso = (f"- Você está vendo só o trecho do episódio de {j_ini:.0f} a {j_fim:.0f} segundos. "
+                 f"Escolha apenas trechos dentro dele.\n") if len(janelas) > 1 else ""
+        pedidos.append(modelo_prompt.format(qtd=qtd, dmin=cfg["duracao_min"], dmax=cfg["duracao_max"], extras=extras + aviso,
+                                            transcricao=texto_compacto(dados["segmentos"], j_ini, j_fim)))
+    print(f"[selecionar] consultando Claude ({len(pedidos)} {'parte' if len(pedidos) == 1 else 'partes em paralelo'}) ...")
+    progresso(None, "Claude está lendo a transcrição e escolhendo os cortes" if len(pedidos) == 1
+              else f"Claude está lendo o episódio em {len(pedidos)} partes ao mesmo tempo")
+    from concurrent.futures import ThreadPoolExecutor
+    with ThreadPoolExecutor(max_workers=min(4, len(pedidos))) as ex:
+        respostas = list(ex.map(lambda pr: consultar_claude(pr, cfg, modo), pedidos))
+    cortes = []
+    for bruto in respostas:
+        m = re.search(r"\[.*\]", bruto, re.DOTALL)
+        if not m:
+            sys.exit(f"Resposta sem JSON:\n{bruto}")
+        cortes += json.loads(m.group(0))
     cortes = ajustar_limites(cortes, dados, cfg)
+    unicos = []
+    for c in sorted(cortes, key=lambda c: c["inicio"]):
+        if all(min(c["fim"], u["fim"]) - max(c["inicio"], u["inicio"]) <= 1 for u in unicos):
+            unicos.append(c)
+    cortes = unicos
     if atuais:
         antes = len(cortes)
         cortes = [c for c in cortes if all(min(c["fim"], a["fim"]) - max(c["inicio"], a["inicio"]) <= 1 for a in atuais)]
@@ -389,20 +521,51 @@ def selecionar(video: Path, cfg, manual=False):
             print(f"[selecionar] {antes - len(cortes)} corte(s) descartado(s) por repetir trecho que já existia")
     for c in cortes:
         c.setdefault("id", novo_id())
-        c.setdefault("velocidade", cfg.get("velocidade_padrao", 1.0))
+        c.setdefault("velocidade", 1.0 if longo else cfg.get("velocidade_padrao", 1.0))
+        c["tipo"] = "longo" if longo else "short"
+    novos_ids = {c["id"] for c in cortes}
     cortes = atuais + cortes
     arq.write_text(json.dumps(cortes, indent=2, ensure_ascii=False), encoding="utf-8")
+    if filtrar and novos_ids:
+        cortes = filtrar_por_nota(video, cfg, cortes, novos_ids, qtd_final)
     for i, c in enumerate(cortes, 1):
         print(f"  {i}. [{fmt_tempo(c['inicio'])}-{fmt_tempo(c['fim'])}] {c['titulo']}")
     return cortes
 
 
 # ---------------------------------------------------------------- potencial de viralização
+def filtrar_por_nota(video, cfg, cortes, novos_ids, qtd_final):
+    """Analisa os cortes novos e fica só com os que atingem `nota_minima` (os melhores, até `qtd_final`).
+    Se nenhum atingir, mantém o melhor para você ter um ponto de partida."""
+    minima = float(cfg["nota_minima"])
+    print(f"[selecionar] analisando {len(novos_ids)} candidatos para ficar só com nota >= {minima:g} ...")
+    analisar_cortes(video, cfg, novos_ids)
+    analises = ler_analises(video)
+    nota = lambda c: (analises.get(c["id"]) or {}).get("nota", -1)
+    candidatos = sorted((c for c in cortes if c["id"] in novos_ids), key=nota, reverse=True)
+    boas = [c for c in candidatos if nota(c) >= minima][:qtd_final]
+    if not boas and candidatos:
+        boas = candidatos[:1]
+        print(f"[selecionar] nenhum candidato chegou a {minima:g}; mantido o melhor ({nota(boas[0]):g})")
+    manter = {c["id"] for c in boas}
+    descartados = novos_ids - manter
+    cortes = [c for c in cortes if c["id"] not in descartados]
+    for i in descartados:
+        analises.pop(i, None)
+    gravar_analises(video, analises)
+    (pasta_trabalho(video) / "cortes.json").write_text(json.dumps(cortes, indent=2, ensure_ascii=False), encoding="utf-8")
+    print(f"[selecionar] {len(manter)} de {len(novos_ids)} candidatos ficaram (nota >= {minima:g}); {len(descartados)} descartados")
+    return cortes
+
+
 # Peso de cada critério na nota final (0-10). Cinco critérios são avaliados pelo Claude a partir do texto;
 # "plataforma" (duração e ritmo de fala) é calculado aqui, por regra, para ser verificável.
 PESOS_VIRAL = {"gancho": 25, "retencao": 20, "emocao": 15, "clareza": 15, "compartilhavel": 15, "plataforma": 10}
 NOMES_VIRAL = {"gancho": "Gancho (primeiros 3 s)", "retencao": "Retenção", "emocao": "Emoção e impacto", "clareza": "Clareza e autonomia",
                "compartilhavel": "Potencial de compartilhamento", "plataforma": "Formato (duração e ritmo)"}
+NOMES_VIRAL_LONGO = {"gancho": "Abertura e promessa", "retencao": "Retenção ao longo do vídeo", "emocao": "Emoção e impacto",
+                    "clareza": "Estrutura (começo, meio e fim)", "compartilhavel": "Potencial de clique e compartilhamento",
+                    "plataforma": "Formato (duração e ritmo)"}
 AVISO_VIRAL = ("Estimativa feita por IA a partir do texto, da duração e do ritmo do corte. Não usa dados reais de TikTok, "
                "Reels ou YouTube e não garante resultado: serve para comparar cortes e apontar o que melhorar.")
 
@@ -426,9 +589,31 @@ CORTES:
 """
 
 
+PROMPT_VIRAL_LONGO = """Você é analista de conteúdo do YouTube e avalia vídeos LONGOS (de 8 a 25 minutos) feitos a partir de um podcast.
+Não compare com Shorts: a duração é esperada. Seja crítico e calibrado: nota 5 é um vídeo mediano; 7 é bom e publicável; 8 ou mais é raro.
+Para cada critério dê uma nota INTEIRA de 0 a 10 e uma justificativa curta (1 ou 2 frases) que cite trechos do texto.
+
+Critérios:
+- gancho: a abertura (primeiros 30 s) cria uma promessa clara de por que ficar? O título combina com o que o vídeo entrega? Começar no meio de uma frase ou com enrolação = nota baixa.
+- retencao: o vídeo mantém o interesse por minutos? (progressão, novas informações ou viradas, sem longos trechos mortos ou repetidos).
+- emocao: provoca reação (riso, indignação, surpresa, identificação)?
+- clareza: tem começo, meio e fim, um assunto central, e faz sentido sem o resto do episódio?
+- compartilhavel: renderia clique em uma thumbnail e alguém comentaria ou mandaria para um amigo?
+
+Além disso: "pontos_fortes" (até 3), "melhorias" (até 3, acionáveis: onde cortar o começo ou o fim, o que reescrever no título) e "titulo_alternativo" (um título melhor, ou "" se o atual já é bom).
+Responda SOMENTE com JSON válido (uma lista, um objeto por vídeo, na mesma ordem), neste formato:
+[{{"id": "...", "criterios": {{"gancho": {{"nota": 0, "porque": "..."}}, "retencao": {{"nota": 0, "porque": "..."}}, "emocao": {{"nota": 0, "porque": "..."}}, "clareza": {{"nota": 0, "porque": "..."}}, "compartilhavel": {{"nota": 0, "porque": "..."}}}}, "resumo": "2 frases explicando a nota geral", "pontos_fortes": ["..."], "melhorias": ["..."], "titulo_alternativo": "..."}}]
+
+VÍDEOS:
+{cortes}
+"""
+
+
 def hash_analise(c):
     """Muda quando o corte muda; a análise antiga passa a valer como 'desatualizada'."""
     base = {"i": round(float(c["inicio"]), 2), "f": round(float(c["fim"]), 2), "v": velocidade_de(c), "t": c.get("titulo", ""), "d": c.get("descricao", "")}
+    if c.get("trechos"):
+        base["tr"] = [[round(a, 2), round(b, 2)] for a, b in trechos_de(c)]
     return hashlib.sha1(json.dumps(base, sort_keys=True, ensure_ascii=False).encode()).hexdigest()[:12]
 
 
@@ -450,12 +635,15 @@ def _faixa(valor, faixas):
 
 def criterio_plataforma(c, n_palavras):
     """Nota 0-10 por regra: duração final e palavras por segundo. Devolve (nota, explicação, medidas)."""
-    dur = (float(c["fim"]) - float(c["inicio"])) / velocidade_de(c)
-    nd = _faixa(dur, [(10, 4), (15, 6), (45, 10), (60, 8), (90, 6), (180, 4), (1e9, 2)])
+    dur = duracao_efetiva(c) / velocidade_de(c)
+    longo = c.get("tipo") == "longo"
+    nd = _faixa(dur, [(180, 3), (360, 5), (480, 7), (1500, 10), (2100, 8), (3600, 6), (1e9, 4)]) if longo \
+        else _faixa(dur, [(10, 4), (15, 6), (45, 10), (60, 8), (90, 6), (180, 4), (1e9, 2)])
     ritmo = n_palavras / dur if dur else 0
     nr = 10 if 2.4 <= ritmo <= 3.6 else 8 if 2.0 <= ritmo <= 4.2 else 6 if 1.6 <= ritmo <= 5.0 else 4
     nota = round((nd + nr) / 2)
-    porque = (f"Duração final de {dur:.0f} s (melhor faixa para Shorts: 15 a 45 s) e ritmo de {ritmo:.1f} palavras por segundo "
+    faixa = "melhor faixa para vídeos longos: 8 a 25 min" if longo else "melhor faixa para Shorts: 15 a 45 s"
+    porque = (f"Duração final de {dur:.0f} s ({faixa}) e ritmo de {ritmo:.1f} palavras por segundo "
               f"(ideal: 2,4 a 3,6). Esta nota é calculada por regra, não pelo Claude.")
     return nota, porque, {"duracao_s": round(dur, 1), "palavras_por_s": round(ritmo, 2)}
 
@@ -480,21 +668,36 @@ def analisar_cortes(video: Path, cfg, ids=None):
     if not modo:
         sys.exit("Claude não conectado. Clique no ícone da chave no topo do painel e entre com sua conta Claude (ou cole uma chave de API).")
 
-    LOTE = 5
-    for k in range(0, len(alvo), LOTE):
-        lote = alvo[k:k + LOTE]
-        progresso(k / len(alvo) * 100, f"Analisando cortes {k + 1} a {k + len(lote)} de {len(alvo)}")
+    # lotes pequenos, pedidos ao Claude ao mesmo tempo; a nota é só pontuação de critérios, então o esforço padrão é baixo
+    LOTE = 3
+    cfg_a = {**cfg, "esforco_claude": cfg.get("esforco_analise", "low")}
+    tam = {"short": LOTE, "longo": 2}   # vídeos longos têm muito texto: lotes menores
+    lotes, preparados = [], []
+    for tp in ("short", "longo"):
+        grupo = [c for c in alvo if (c.get("tipo") or "short") == tp]
+        lotes += [(tp, grupo[k:k + tam[tp]]) for k in range(0, len(grupo), tam[tp])]
+    for tp, lote in lotes:
         blocos, medidas = [], {}
         for c in lote:
             vel = velocidade_de(c)
-            dentro = [w for w in palavras if w["fim"] > c["inicio"] and w["inicio"] < c["fim"]]
+            dentro = palavras_virtuais(palavras, c)
             abertura = " ".join(w["p"] for w in dentro if w["inicio"] < c["inicio"] + 3 * vel)
             nota_p, porque_p, med = criterio_plataforma(c, len(dentro))
             medidas[c["id"]] = (nota_p, porque_p, med)
             blocos.append(f'### id={c["id"]} | duração final {med["duracao_s"]:.0f} s | velocidade {vel:g}x | título: {c.get("titulo", "")} | descrição: {c.get("descricao", "")}\n'
                           f'Primeiros 3 segundos: "{abertura}"\nTexto completo: "{" ".join(w["p"] for w in dentro)}"')
-        print(f"[analisar] consultando Claude ({len(lote)} cortes) ...")
-        bruto = consultar_claude(PROMPT_VIRAL.format(cortes="\n\n".join(blocos)), cfg, modo)
+        modelo_p = (PROMPT_VIRAL_LONGO if tp == "longo" else PROMPT_VIRAL).format(cortes="\n\n".join(blocos))
+        lic = licoes_para_prompt(tp)
+        if lic:  # lições dos resultados reais ajudam a calibrar a nota; a régua dos critérios continua a mesma
+            modelo_p = modelo_p.replace("\nCORTES:\n", f"\n{lic}\nCORTES:\n", 1).replace("\nVÍDEOS:\n", f"\n{lic}\nVÍDEOS:\n", 1)
+        preparados.append((lote, medidas, modelo_p, tp))
+
+    print(f"[analisar] consultando Claude ({len(alvo)} cortes em {len(lotes)} {'lote' if len(lotes) == 1 else 'lotes'}, até 4 ao mesmo tempo) ...")
+    progresso(0, f"Analisando {len(alvo)} {'corte' if len(alvo) == 1 else 'cortes'}")
+    def aplicar(i, bruto):
+        """Grava as notas de um lote assim que ele volta (o painel mostra cada nota na hora)."""
+        lote, medidas, _, tp = preparados[i]
+        nomes = NOMES_VIRAL_LONGO if tp == "longo" else NOMES_VIRAL
         m = re.search(r"\[.*\]", bruto, re.DOTALL)
         if not m:
             sys.exit(f"Resposta sem JSON:\n{bruto[:500]}")
@@ -513,7 +716,7 @@ def analisar_cortes(video: Path, cfg, ids=None):
             total = sum(PESOS_VIRAL.values())
             nota = round(sum(criterios[k2]["nota"] * PESOS_VIRAL[k2] for k2 in PESOS_VIRAL) / total, 1)
             for k2 in criterios:
-                criterios[k2].update(nome=NOMES_VIRAL[k2], peso=PESOS_VIRAL[k2])
+                criterios[k2].update(nome=nomes[k2], peso=PESOS_VIRAL[k2])
             analises[c["id"]] = {
                 "nota": nota, "veredito": veredito_viral(nota), "resumo": str(a.get("resumo", "")).strip(),
                 "criterios": criterios, "medidas": med,
@@ -523,7 +726,228 @@ def analisar_cortes(video: Path, cfg, ids=None):
             }
             print(f"  {nota:>4}  {c.get('titulo', '')[:60]}")
         gravar_analises(video, analises)
+
+    from concurrent.futures import ThreadPoolExecutor, as_completed
+    with ThreadPoolExecutor(max_workers=min(4, len(preparados))) as ex:
+        futuros = {ex.submit(consultar_claude, pr[2], cfg_a, modo): i for i, pr in enumerate(preparados)}
+        for n_ok, fut in enumerate(as_completed(futuros), 1):
+            aplicar(futuros[fut], fut.result())
+            progresso(n_ok / len(preparados) * 100, f"Análise: {n_ok} de {len(preparados)} lotes prontos")
+
     progresso(100, "Análise concluída")
+
+
+# ---------------------------------------------------------------- aprender com os resultados reais
+# O Claude não "treina": as lições abaixo são escritas por ele a partir dos resultados que VOCÊ registra e
+# entram como contexto nos prompts de escolha e de análise dos próximos cortes.
+DESEMPENHO = BASE / "desempenho.json"   # {"<episodio>|<id do corte>": {...resultado + retrato do corte na hora}}
+LICOES = BASE / "licoes.json"            # {"atualizado_em", "n_resultados", "resumo", "calibracao", "licoes": [{"tipo","texto","forca"}]}
+CAMPOS_RESULTADO = ("plataforma", "postado_em", "views", "curtidas", "comentarios", "compartilhamentos", "retencao_pct", "observacao")
+
+
+def ler_desempenho() -> dict:
+    return json.loads(DESEMPENHO.read_text(encoding="utf-8-sig")) if DESEMPENHO.exists() else {}
+
+
+def gravar_desempenho(d: dict):
+    DESEMPENHO.write_text(json.dumps(d, indent=2, ensure_ascii=False), encoding="utf-8")
+
+
+def ler_licoes() -> dict:
+    return json.loads(LICOES.read_text(encoding="utf-8-sig")) if LICOES.exists() else {}
+
+
+def licoes_para_prompt(tipo: str) -> str:
+    """Linhas de lições (do tipo 'short'/'longo' e as gerais) para colar em um prompt; vazio se ainda não há."""
+    itens = [l for l in ler_licoes().get("licoes", []) if l.get("tipo") in (tipo, "ambos", None)]
+    if not itens:
+        return ""
+    return ("- Lições aprendidas com os resultados REAIS dos cortes anteriores deste canal (use como guia, sem repetir cegamente):\n"
+            + "\n".join(f"  * {l['texto']}" for l in itens[:8]) + "\n")
+
+
+def _pearson(xs, ys):
+    n = len(xs)
+    if n < 3:
+        return None
+    mx, my = sum(xs) / n, sum(ys) / n
+    sx = sum((x - mx) ** 2 for x in xs) ** 0.5
+    sy = sum((y - my) ** 2 for y in ys) ** 0.5
+    return None if sx == 0 or sy == 0 else round(sum((x - mx) * (y - my) for x, y in zip(xs, ys)) / (sx * sy), 2)
+
+
+def correlacoes(dados: dict) -> dict:
+    """Correlação (Pearson) entre a nota prevista e as visualizações reais (log), geral e por critério. Indicativo, não prova."""
+    import math
+    itens = [d for d in dados.values() if d.get("views") is not None and d.get("nota_prevista") is not None]
+    ys = [math.log1p(float(d["views"])) for d in itens]
+    out = {"n": len(itens), "nota": _pearson([float(d["nota_prevista"]) for d in itens], ys), "criterios": {}}
+    for k in PESOS_VIRAL:
+        pares = [(float(d["criterios"][k]), y) for d, y in zip(itens, ys) if k in (d.get("criterios") or {})]
+        out["criterios"][k] = _pearson([p[0] for p in pares], [p[1] for p in pares])
+    return out
+
+
+PROMPT_APRENDER = """Você é analista de desempenho de vídeos de podcast cortados para redes sociais.
+Abaixo estão os vídeos que o usuário POSTOU, com o que foi previsto antes (nota viral e critérios, texto de abertura, duração) e o resultado REAL (visualizações, curtidas, comentários, compartilhamentos, retenção média %).
+Descubra o que de fato funcionou e o que não funcionou NESTE canal, e escreva lições curtas e acionáveis para quem escolhe e avalia os próximos cortes.
+Regras: baseie cada lição nos dados (cite padrões, não invente); a amostra é pequena, então marque "forca": "fraca" quando houver poucos casos e nunca trate uma coincidência como regra;
+diga também se a nota prevista parece otimista ou pessimista em relação aos resultados e quais critérios parecem prever melhor. Máximo de 8 lições.
+Responda SOMENTE com JSON válido:
+{{"resumo": "2 frases sobre o que os resultados mostram", "calibracao": "como a nota prevista se compara ao resultado real, em 1 ou 2 frases",
+  "licoes": [{{"tipo": "short" ou "longo" ou "ambos", "texto": "lição acionável e específica", "forca": "fraca" ou "media" ou "forte"}}]}}
+
+CORRELAÇÃO LOCAL (nota prevista x visualizações, -1 a 1; n = vídeos): {correlacao}
+
+VÍDEOS POSTADOS:
+{videos}
+"""
+
+
+def aprender(cfg):
+    """Atualiza `licoes.json` a partir dos resultados registrados (mínimo 3 vídeos com visualizações)."""
+    dados = ler_desempenho()
+    uteis = {k: v for k, v in dados.items() if v.get("views") is not None}
+    if len(uteis) < 3:
+        sys.exit("Registre o resultado de pelo menos 3 vídeos postados (visualizações) para o Claude encontrar padrões.")
+    modo = modo_claude()
+    if not modo:
+        sys.exit("Claude não conectado. Clique no ícone da chave no topo do painel e entre com sua conta Claude (ou cole uma chave de API).")
+    cor = correlacoes(uteis)
+    campos = ("titulo", "tipo", "duracao_s", "nota_prevista", "criterios", "abertura", "plataforma", "views", "curtidas", "comentarios",
+              "compartilhamentos", "retencao_pct", "observacao")
+    videos = "\n".join(json.dumps({c: v.get(c) for c in campos if v.get(c) not in (None, "")}, ensure_ascii=False) for v in uteis.values())
+    print(f"[aprender] consultando Claude ({len(uteis)} vídeos com resultado) ...")
+    progresso(None, f"Claude está analisando {len(uteis)} resultados")
+    bruto = consultar_claude(PROMPT_APRENDER.format(correlacao=json.dumps(cor, ensure_ascii=False), videos=videos), cfg, modo)
+    m = re.search(r"\{.*\}", bruto, re.DOTALL)
+    if not m:
+        sys.exit(f"Resposta sem JSON:\n{bruto[:500]}")
+    r = json.loads(m.group(0))
+    licoes = [{"tipo": l.get("tipo") if l.get("tipo") in ("short", "longo", "ambos") else "ambos", "texto": str(l.get("texto", "")).strip(),
+               "forca": l.get("forca") if l.get("forca") in ("fraca", "media", "forte") else "fraca"}
+              for l in r.get("licoes", []) if str(l.get("texto", "")).strip()][:8]
+    LICOES.write_text(json.dumps({"atualizado_em": time.time(), "n_resultados": len(uteis), "resumo": str(r.get("resumo", "")).strip(),
+                                  "calibracao": str(r.get("calibracao", "")).strip(), "correlacao": cor, "licoes": licoes},
+                                 indent=2, ensure_ascii=False), encoding="utf-8")
+    progresso(100, "Lições atualizadas")
+    print(f"[aprender] {len(licoes)} lições gravadas")
+
+
+# ---------------------------------------------------------------- melhorar cortes com o Claude
+PROMPT_MELHORAR = """Você é editor de vídeo de podcast. Recebe UM corte já escolhido, a análise dele (com o que melhorar) e a transcrição do trecho
+e de uma margem antes e depois, em blocos [inicio-fim] texto, com tempos em segundos do episódio.
+Sua tarefa é melhorar o corte aplicando as sugestões, SEM inventar falas nem mudar o sentido. Você pode:
+- ajustar início e fim (use a margem fornecida);
+- tirar trechos do meio (tangentes, repetições, pausas, enrolação): informe "trechos" = as partes MANTIDAS, em ordem e sem sobreposição;
+- dividir em 2 ou mais cortes independentes quando o trecho mistura assuntos ou é longo demais.
+Regras: cada corte resultante precisa fazer sentido sozinho, começar em um gancho e terminar em uma ideia completa, e ter duração
+final (somando só as partes mantidas) entre {dmin} e {dmax} segundos. {tipo_regra}Se o corte já está bom, devolva-o quase igual (acao "ajustar").
+Responda SOMENTE com JSON válido neste formato:
+{{"acao": "ajustar" ou "dividir", "resumo": "o que você mudou e por quê, em 1 ou 2 frases",
+  "cortes": [{{"inicio": 0.0, "fim": 0.0, "trechos": [[0.0, 0.0]], "titulo": "...", "descricao": "...", "hashtags": ["#..."]}}]}}
+("trechos" pode ser [] se o corte for contínuo.)
+
+CORTE ATUAL: de {inicio:.0f} a {fim:.0f} s (duração {dur:.0f} s). Título: {titulo}
+MELHORIAS SUGERIDAS NA ANÁLISE:
+{melhorias}
+
+TRANSCRIÇÃO (margem incluída):
+{transcricao}
+"""
+
+
+def melhorar_cortes(video: Path, cfg, ids):
+    """Pede ao Claude para melhorar os cortes `ids`: ajustar limites, tirar trechos do meio ou dividir.
+    Os cortes novos entram logo depois do original (marcados com `melhorado_de`) e são analisados em seguida.
+    Com `substituir`, o original é removido; senão ele é mantido para você comparar."""
+    trab = pasta_trabalho(video)
+    arq = trab / "cortes.json"
+    cortes = json.loads(arq.read_text(encoding="utf-8-sig"))
+    dados = json.loads((trab / "transcricao.json").read_text(encoding="utf-8-sig"))
+    analises = ler_analises(video)
+    alvo = [c for c in cortes if c.get("id") in (ids or set())]
+    if not alvo:
+        sys.exit("Nenhum corte para melhorar. Salve os cortes e selecione ao menos um.")
+    modo = modo_claude()
+    if not modo:
+        sys.exit("Claude não conectado. Clique no ícone da chave no topo do painel e entre com sua conta Claude (ou cole uma chave de API).")
+
+    def pedido(c):
+        longo = c.get("tipo") == "longo"
+        margem = 120 if longo else 45
+        melhorias = (analises.get(c["id"]) or {}).get("melhorias") or ["(sem análise: melhore o gancho inicial e corte enrolação)"]
+        dmin, dmax = (cfg["duracao_min"], cfg["duracao_max"]) if not longo else (300, 1500)
+        return PROMPT_MELHORAR.format(
+            dmin=dmin, dmax=dmax, inicio=c["inicio"], fim=c["fim"], dur=duracao_efetiva(c), titulo=c.get("titulo", ""),
+            tipo_regra="Este é um vídeo longo de YouTube (16:9): capítulos completos, não Shorts. " if longo else "",
+            melhorias="\n".join(f"- {m}" for m in melhorias),
+            transcricao=texto_compacto(dados["segmentos"], c["inicio"] - margem, c["fim"] + margem, bloco=10))
+
+    print(f"[melhorar] consultando Claude ({len(alvo)} {'corte' if len(alvo) == 1 else 'cortes'}) ...")
+    progresso(0, f"Claude está melhorando {len(alvo)} {'corte' if len(alvo) == 1 else 'cortes'}")
+    from concurrent.futures import ThreadPoolExecutor, as_completed
+    respostas = {}
+    with ThreadPoolExecutor(max_workers=min(3, len(alvo))) as ex:
+        futuros = {ex.submit(consultar_claude, pedido(c), cfg, modo): c["id"] for c in alvo}
+        for n_ok, fut in enumerate(as_completed(futuros), 1):
+            respostas[futuros[fut]] = fut.result()
+            progresso(n_ok / len(alvo) * 100, f"Melhorados {n_ok} de {len(alvo)}")
+
+    palavras = [w for s in dados["segmentos"] for w in s["palavras"]]
+    novos_ids, saida = [], []
+    for c in cortes:
+        saida.append(c)
+        bruto = respostas.get(c.get("id"))
+        if bruto is None:
+            continue
+        m = re.search(r"\{.*\}", bruto, re.DOTALL)
+        if not m:
+            print(f"  aviso: resposta sem JSON para o corte {c['id']}")
+            continue
+        try:
+            r = json.loads(m.group(0))
+        except ValueError:
+            print(f"  aviso: JSON inválido para o corte {c['id']}")
+            continue
+        novos = []
+        for n in r.get("cortes", []):
+            try:
+                ini, fim = float(n["inicio"]), float(n["fim"])
+            except (KeyError, TypeError, ValueError):
+                continue
+            if fim - ini < 5:
+                continue
+            ajustado = ajustar_limites([{"inicio": ini, "fim": fim}], dados, cfg)[0]
+            trechos = []
+            for par in n.get("trechos") or []:
+                try:
+                    a, b = float(par[0]), float(par[1])
+                except (TypeError, ValueError, IndexError):
+                    continue
+                if b - a >= 0.3:
+                    trechos.append([max(ajustado["inicio"], a), min(ajustado["fim"], b)])
+            novo = {**{k: v for k, v in c.items() if k not in ("id", "trechos", "thumb")},
+                    "id": novo_id(), "inicio": round(ajustado["inicio"], 2), "fim": round(ajustado["fim"], 2),
+                    "titulo": str(n.get("titulo") or c.get("titulo", "")).strip(),
+                    "descricao": str(n.get("descricao") or c.get("descricao", "")).strip(),
+                    "hashtags": [str(h) for h in (n.get("hashtags") or c.get("hashtags", []))],
+                    "melhorado_de": c["id"], "motivo": str(r.get("resumo", "")).strip()}
+            if len(trechos) > 1:
+                novo["trechos"] = [[round(a, 2), round(b, 2)] for a, b in trechos]
+            novos.append(novo)
+        print(f"  corte {c['id']}: {r.get('acao', '?')} -> {len(novos)} corte(s). {str(r.get('resumo', ''))[:200]}")
+        if cfg.get("substituir") and novos:
+            saida.pop()
+        saida += novos
+        novos_ids += [n["id"] for n in novos]
+    arq.write_text(json.dumps(saida, indent=2, ensure_ascii=False), encoding="utf-8")
+    if novos_ids:
+        progresso(None, "Analisando os cortes melhorados")
+        analisar_cortes(video, cfg, set(novos_ids))
+    else:
+        print("[melhorar] nenhum corte novo foi criado")
+    progresso(100, "Melhoria concluída")
 
 
 # ---------------------------------------------------------------- logo da marca
@@ -650,13 +1074,50 @@ def filtro_video(vertical, ass_nome, vel=1.0, logo=None):
     return extras_do_filtro(f, "[v]", vel, logo, ass_nome)
 
 
+def trechos_de(c):
+    """Partes mantidas do corte, em segundos do episódio: [(ini, fim), ...]. Sem `trechos`, o corte inteiro.
+    `trechos` permite tirar partes do meio (tangentes, pausas) sem dividir o corte."""
+    ini, fim = float(c["inicio"]), float(c["fim"])
+    brutos = c.get("trechos") or []
+    partes = sorted((max(ini, float(a)), min(fim, float(b))) for a, b in brutos)
+    partes = [(a, b) for a, b in partes if b - a >= 0.3]
+    return partes if partes else [(ini, fim)]
+
+
+def duracao_efetiva(c):
+    """Duração do corte em segundos do episódio, já sem os trechos removidos (antes da velocidade)."""
+    return sum(b - a for a, b in trechos_de(c))
+
+
+def palavras_virtuais(palavras, c):
+    """Palavras dos trechos mantidos numa linha do tempo contínua que começa em `inicio` (para a legenda)."""
+    saida, acum = [], 0.0
+    ini = float(c["inicio"])
+    for a, b in trechos_de(c):
+        for w in palavras:
+            if w["fim"] > a and w["inicio"] < b:
+                saida.append({"p": w["p"], "inicio": ini + acum + max(w["inicio"], a) - a, "fim": ini + acum + min(w["fim"], b) - a})
+        acum += b - a
+    return saida
+
+
 def velocidade_de(c):
     return min(2.0, max(0.5, float(c.get("velocidade") or 1.0)))
 
 
+def cfg_do_corte(c, cfg):
+    """Vídeo longo sai sempre em 16:9; legenda queimada só se `legendas_longo` estiver ligado."""
+    if c.get("tipo") != "longo":
+        return cfg
+    return {**cfg, "formato": "horizontal", "legendas": bool(cfg.get("legendas_longo", False)),
+            "logo_posicao": cfg.get("logo_posicao_longo", "topo-direita"), "logo_tamanho": cfg.get("logo_tamanho_longo", 9)}
+
+
 def hash_render(c, cfg):
     """Identifica tudo que muda o vídeo final. Se o hash mudou, o vídeo gerado está desatualizado."""
+    cfg = cfg_do_corte(c, cfg)
     chaves = {"i": round(float(c["inicio"]), 2), "f": round(float(c["fim"]), 2), "v": velocidade_de(c),
+              **({"tr": [[round(a, 2), round(b, 2)] for a, b in trechos_de(c)]} if c.get("trechos") else {}),
               "fmt": cfg["formato"], "leg": bool(cfg["legendas"]), "pl": cfg["palavras_por_legenda"],
               "tam": cfg["tamanho_legenda"], "fonte": cfg["fonte_legenda"], "cor": cfg.get("cor_legenda"),
               "pos": cfg.get("posicao_legenda")}
@@ -686,12 +1147,10 @@ def cortar(video: Path, cfg, ids=None):
     dados = json.loads((trab / "transcricao.json").read_text(encoding="utf-8-sig"))
     palavras = [w for s in dados["segmentos"] for w in s["palavras"]]
     ffmpeg = achar_ffmpeg()
-    vertical = cfg["formato"] == "vertical"
     e_audio = video.suffix.lower() in EXT_AUDIO
     destino = SAIDA / video.stem
     destino.mkdir(parents=True, exist_ok=True)
     renders = ler_renders(video)
-    logo_arq = logo_ativa(cfg)
     src_w, src_h = (0, 0) if e_audio else dimensoes_video(ffmpeg, video)
 
     alvo = []
@@ -713,7 +1172,13 @@ def cortar(video: Path, cfg, ids=None):
         nome = f"{i:02d}_{slug(c['titulo'])}_{cid}"
         ini, fim = float(c["inicio"]), float(c["fim"])
         vel = velocidade_de(c)
-        print(f"[cortar] {nome}  ({fim - ini:.0f}s a {vel:g}x = {(fim - ini) / vel:.0f}s)")
+        cfgo, cfg_ = cfg, cfg_do_corte(c, cfg)  # cfg_ = configuração efetiva deste corte
+        cfg = cfg_
+        vertical = cfg["formato"] == "vertical"
+        logo_arq = logo_ativa(cfg)
+        trs = trechos_de(c)
+        total = duracao_efetiva(c)
+        print(f"[cortar] {nome}  ({total:.0f}s{f' em {len(trs)} trechos' if len(trs) > 1 else ''} a {vel:g}x = {total / vel:.0f}s)")
         progresso(n / len(alvo) * 100, f"Corte {n + 1} de {len(alvo)}: {c['titulo']}")
 
         antigo = renders.get(cid)  # remove a versão anterior deste corte (e só dele)
@@ -724,7 +1189,10 @@ def cortar(video: Path, cfg, ids=None):
         ass_nome = None
         if cfg["legendas"] and palavras:
             ass_nome = f"{nome}.ass"
-            gerar_ass(palavras, ini, fim, destino / ass_nome, cfg, vertical, vel)
+            if len(trs) > 1:
+                gerar_ass(palavras_virtuais(palavras, c), ini, ini + total, destino / ass_nome, cfg, vertical, vel)
+            else:
+                gerar_ass(palavras, ini, fim, destino / ass_nome, cfg, vertical, vel)
 
         logo = None
         if logo_arq:
@@ -737,7 +1205,7 @@ def cortar(video: Path, cfg, ids=None):
 
         cmd = [ffmpeg, "-y", "-hide_banner", "-loglevel", "error"]
         if e_audio:  # podcast só em áudio: gera fundo preto
-            cmd += ["-f", "lavfi", "-i", f"color=c=black:s=1080x1920:r=30:d={(fim - ini) / vel:.2f}"]
+            cmd += ["-f", "lavfi", "-i", f"color=c=black:s={'1080x1920' if vertical else '1920x1080'}:r=30:d={total / vel:.2f}"]
             cmd += ["-ss", f"{ini:.2f}", "-t", f"{fim - ini:.2f}", "-i", str(video)]
             if logo:
                 cmd += ["-i", str(logo_arq)]
@@ -751,10 +1219,24 @@ def cortar(video: Path, cfg, ids=None):
                 logo["idx"] = 1
             filtro, saida_v = filtro_video(vertical, ass_nome, vel, logo)
             mapa = ["-map", saida_v, "-map", "0:a?"]
-        cmd += ["-filter_complex", filtro] + mapa
-        if vel != 1:
-            cmd += ["-af", f"atempo={vel:.4f}"]  # acelera sem mudar o tom da voz
-        cmd += ["-c:v", "libx264", "-preset", "medium", "-crf", "20", "-pix_fmt", "yuv420p",
+        if len(trs) > 1:  # vários trechos: corta cada parte (tempos relativos ao -ss) e junta, antes dos demais filtros
+            ai = 1 if e_audio else 0
+            pre = ""
+            if not e_audio:
+                pre += "".join(f"[0:v]trim=start={a - ini:.3f}:end={b - ini:.3f},setpts=PTS-STARTPTS[v{k}];" for k, (a, b) in enumerate(trs))
+                pre += "".join(f"[v{k}]" for k in range(len(trs))) + f"concat=n={len(trs)}:v=1:a=0[vc];"
+                filtro = filtro.replace("[0:v]", "[vc]", 1)
+            pre += "".join(f"[{ai}:a]atrim=start={a - ini:.3f}:end={b - ini:.3f},asetpts=PTS-STARTPTS[a{k}];" for k, (a, b) in enumerate(trs))
+            pre += "".join(f"[a{k}]" for k in range(len(trs))) + f"concat=n={len(trs)}:v=0:a=1[ac];"
+            pre += f"[ac]atempo={vel:.4f}[ao];" if vel != 1 else "[ac]anull[ao];"
+            filtro = pre + filtro
+            mapa = [mapa[0], mapa[1], "-map", "[ao]"]
+            cmd += ["-filter_complex", filtro] + mapa
+        else:
+            cmd += ["-filter_complex", filtro] + mapa
+            if vel != 1:
+                cmd += ["-af", f"atempo={vel:.4f}"]  # acelera sem mudar o tom da voz
+        cmd += ["-c:v", "libx264", "-preset", "veryfast" if c.get("tipo") == "longo" else "medium", "-crf", "20", "-pix_fmt", "yuv420p",
                 "-c:a", "aac", "-b:a", "160k", "-movflags", "+faststart", f"{nome}.mp4"]
         # roda dentro da pasta de destino: o filtro "ass" aceita nome relativo sem problemas de "C:\"
         r = subprocess.run(cmd, cwd=destino, capture_output=True, text=True)
@@ -762,13 +1244,15 @@ def cortar(video: Path, cfg, ids=None):
             sys.exit("Cancelado pelo usuário.")
         if r.returncode != 0:
             print("  ERRO ffmpeg:", r.stderr[-600:])
+            cfg = cfgo
             continue
 
         legenda = (f"{c['titulo']}\n\n{c.get('descricao', '')}\n\n{' '.join(c.get('hashtags', []))}\n\n"
                    f"Motivo: {c.get('motivo', '')}\n")
         (destino / f"{nome}.txt").write_text(legenda, encoding="utf-8")
-        renders[cid] = {"arquivo": f"{nome}.mp4", "hash": hash_render(c, cfg), "titulo": c["titulo"]}
+        renders[cid] = {"arquivo": f"{nome}.mp4", "hash": hash_render(c, cfgo), "titulo": c["titulo"]}
         gravar_renders(video, renders)
+        cfg = cfgo
     progresso(100, "Vídeos prontos")
     print(f"[cortar] pronto: {destino}")
 

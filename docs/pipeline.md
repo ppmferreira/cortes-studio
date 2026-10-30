@@ -73,3 +73,23 @@ Cada etapa chama `progresso(pct, detalhe)`, que alimenta a barra do painel **e**
 ## Importar por link
 
 `_baixar()` usa `yt-dlp` (até 1080p, `mp4`) e grava em `entrada/<título>.mp4`, com progresso em `IMPORT`. Só aceita `http://` e `https://`.
+
+## Vídeos longos (`tipo_corte = "longo"`)
+
+Usa `PROMPT_LONGO` no lugar de `PROMPT`: capítulos completos (começo, meio e fim), sem sobreposição, e o Claude devolve também `thumb: {linha1, linha2}` (textos curtos em maiúsculas). Os cortes ganham `tipo: "longo"` e velocidade 1×. Em `cortar`, `cfg_do_corte()` força `formato = horizontal` e `legendas = legendas_longo` (padrão `false`); o ffmpeg usa `-preset veryfast` para não demorar em vídeos de 20 min. Cortes `short` e `longo` convivem no mesmo episódio. Não há limite de duração além dos 1800 s da API de opções.
+
+## Escolha de cortes em episódios longos
+
+`selecionar` usa `texto_compacto()` (blocos de ~25 s, tempos inteiros) e `janelas_do_episodio()`: episódios com mais de ~50 min são divididos em janelas de ~40 min, com sobreposição de até 3 min, cada uma enviada em uma chamada `claude -p` (até 4 em paralelo, `ThreadPoolExecutor`). `dividir_cotas()` reparte `qtd_cortes` entre as janelas; se `qtd_cortes` for menor que o número de janelas, cada janela procura 1 e pode responder `[]`. Depois de `ajustar_limites`, cortes que se sobrepõem (mais de 1 s) são descartados. Cada chamada tem timeout de 900 s.
+
+Análise viral: lotes de 3 cortes, até 4 em paralelo (`ThreadPoolExecutor`), `--effort` = `esforco_analise` (padrão `low`). O progresso mostra quantos lotes já voltaram; os resultados são gravados na ordem dos cortes.
+
+## Análise por tipo e filtro por nota
+
+`analisar_cortes` separa os cortes por `tipo`: `short` usa `PROMPT_VIRAL` e a régua de duração de Shorts (melhor faixa 15 a 45 s); `longo` usa `PROMPT_VIRAL_LONGO` e a régua de vídeos longos (melhor faixa 8 a 25 min, pontos: até 3 min = 3, até 6 = 5, até 8 = 7, até 25 = 10, até 35 = 8, até 60 = 6, acima = 4). Os nomes dos critérios gravados em `analises.json` também mudam por tipo. Com `filtrar_por_nota`, `selecionar` pede `2 × qtd_cortes` (máx. 30), grava, chama `filtrar_por_nota()` (analisa só os novos, descarta os abaixo de `nota_minima`, mantém até `qtd_cortes` pela nota e remove do `cortes.json` e do `analises.json` os descartados).
+
+## Trechos removidos, melhorar e aprender
+
+- **`trechos`:** `trechos_de(c)` devolve as partes mantidas (padrão: o corte inteiro). Em `cortar`, com mais de uma parte o ffmpeg usa `-ss/-t` do corte e, dentro do filtro, `trim`/`atrim` + `concat` por parte, antes de velocidade, logo e legenda. A legenda usa `palavras_virtuais()` (linha do tempo contínua). Duração = `duracao_efetiva()` (soma das partes) dividida pela velocidade; entra em `hash_render`, `hash_analise` e no critério de formato.
+- **`melhorar_cortes`:** para cada corte, um pedido ao Claude (até 3 em paralelo) com o corte, as *melhorias* da análise e a transcrição em blocos de 10 s com margem (45 s em shorts, 120 s em longos). A resposta (`ajustar` ou `dividir`) vira cortes novos (limites encaixados nas palavras), analisados em seguida. `opcoes.substituir` remove o original.
+- **`aprender`:** reúne os resultados de `desempenho.json` (mínimo 3 com visualizações), calcula a correlação local (Pearson, nota prevista × log das views) e pede ao Claude até 8 lições, gravadas em `licoes.json`. `licoes_para_prompt()` acrescenta as lições (do tipo certo) aos prompts de `selecionar` e de análise. Elas orientam, não mudam a régua dos critérios.

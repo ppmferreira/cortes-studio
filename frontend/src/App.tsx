@@ -86,7 +86,11 @@ export default function App() {
   async function rodar(etapa: Etapa, refazer = false, nome?: string, extra?: { cortes?: string[]; opcoes?: OpcoesRender }) {
     const alvo = nome ?? atual ?? estado?.episodios[0]?.nome
     if (!alvo) return
-    try { await api.rodar(alvo, etapa, refazer, extra); await atualizar() } catch (e) { toast((e as Error).message) }
+    try {
+      const r = await api.rodar(alvo, etapa, refazer, extra) as { fila?: number }
+      if (r?.fila) toast('Análise na fila: começa sozinha quando o processo atual terminar')
+      await atualizar()
+    } catch (e) { toast((e as Error).message) }
   }
 
   async function cancelarProcesso() {
@@ -141,7 +145,7 @@ export default function App() {
         )}
         {rota === 'conteudo' && <Conteudo episodios={estado.episodios} busca={busca} aoAbrir={abrir} aoEnviar={() => setEnviarAberto(true)} />}
         {rota === 'config' && <Configuracoes estado={estado} aoMudou={carregar} aviso={toast} aoConta={() => setDialogo('conta')} />}
-        {rota === 'videos' && <Videos episodios={estado.episodios} busca={busca} aviso={toast} aoMudou={carregar} />}
+        {rota === 'videos' && <Videos ocupado={!!job?.rodando} episodios={estado.episodios} busca={busca} aviso={toast} aoMudou={carregar} />}
         {rota === 'editor' && (!ep ? (
           <div className="empty">
             <Icon name="movie" />

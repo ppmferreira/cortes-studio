@@ -17,7 +17,7 @@ from pathlib import Path
 from typing import Literal
 
 import uvicorn
-from fastapi import FastAPI, File, HTTPException, UploadFile
+from fastapi import FastAPI, File, HTTPException, Request, UploadFile
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
@@ -61,6 +61,10 @@ class Corte(BaseModel):
     hashtags: list[str] = []
     id: str = ""
     velocidade: float = Field(1.0, ge=0.5, le=2.0)
+    tipo: Literal["short", "longo"] = "short"
+    melhorado_de: str = ""                  # id do corte que originou este (criado por "Melhorar com Claude")
+    trechos: list[list[float]] | None = None   # partes mantidas [[ini, fim], ...] (tira trechos do meio do corte)
+    thumb: dict[str, str] = {}             # {"linha1": ..., "linha2": ...} textos sugeridos para a thumbnail
 
 
 class Geral(BaseModel):
@@ -81,17 +85,21 @@ class Geral(BaseModel):
     folga_inicio: float = Field(0.15, ge=0, le=3)
     folga_fim: float = Field(0.35, ge=0, le=3)
     velocidade_padrao: float = Field(1.0, ge=0.5, le=2.0)
+    nota_minima: float = Field(7, ge=0, le=10)
     usar_logo: bool = True
     logo: str = ""
     logo_posicao: Literal["topo-esquerda", "topo-centro", "topo-direita", "centro", "baixo-esquerda", "baixo-centro", "baixo-direita"] = "topo-centro"
     logo_tamanho: int = Field(22, ge=5, le=60)
     logo_opacidade: int = Field(100, ge=10, le=100)
+    logo_posicao_longo: Literal["topo-esquerda", "topo-direita", "baixo-esquerda", "baixo-direita"] = "topo-direita"
+    logo_tamanho_longo: int = Field(9, ge=3, le=30)
 
 
 class TemplateIn(BaseModel):
     nome: str = Field(min_length=1, max_length=60)
     descricao: str = ""
     prompt: str = Field(min_length=1, max_length=4000)
+    tipo: Literal["short", "longo"] = "short"
 
 
 class OpcoesRender(BaseModel):
@@ -103,6 +111,10 @@ class OpcoesRender(BaseModel):
     duracao_min: int | None = Field(None, ge=5, le=900)
     duracao_max: int | None = Field(None, ge=10, le=1800)
     instrucoes_extras: str | None = None
+    tipo_corte: Literal["short", "longo"] | None = None   # "longo" = capítulos 16:9 de vários minutos
+    filtrar_por_nota: bool | None = None   # pede o dobro de cortes, analisa e fica só com os de nota >= nota_minima
+    nota_minima: float | None = Field(None, ge=0, le=10)
+    substituir: bool | None = None         # melhorar: remove o corte original (senão ele é mantido para comparar)
     adicionar: bool | None = None          # mantém os cortes atuais e acrescenta novos, sem repetir trechos
 
 
@@ -115,7 +127,7 @@ class RodarLote(BaseModel):
 
 class Rodar(BaseModel):
     episodio: str
-    etapa: Literal["tudo", "cortes", "transcrever", "selecionar", "cortar", "analisar"]
+    etapa: Literal["tudo", "cortes", "transcrever", "selecionar", "cortar", "analisar", "melhorar", "aprender"]
     manual: bool = False
     refazer: bool = False
     cortes: list[str] | None = None        # só estes cortes (ids) ao gerar vídeos
@@ -151,7 +163,7 @@ LOG = Log()
 JOB = {"rodando": False, "etapa": "", "episodio": "", "erro": None, "plano": [], "feitas": [], "t0": 0.0, "lote": None}
 TRAVA = threading.Lock()
 # peso de cada etapa no progresso total de "Fazer tudo" (a transcrição é de longe a mais demorada)
-PESOS = {"transcrever": 0.70, "selecionar": 0.08, "cortar": 0.22, "analisar": 1.0}
+PESOS = {"transcrever": 0.70, "selecionar": 0.08, "cortar": 0.22, "analisar": 1.0, "melhorar": 1.0, "aprender": 1.0}
 
 
 def iniciar_etapa(nome: str):
@@ -177,7 +189,7 @@ def job_publico():
         "pct_total": round(total, 1), "pct_etapa": pct_etapa,
         "detalhe": C.PROGRESSO["detalhe"] if rodando else "",
         "decorrido_s": round(decorrido), "eta_s": round(eta) if eta is not None else None,
-        "log": LOG.texto(),
+        "log": LOG.texto(), "fila": len(FILA),
     }
 
 
@@ -186,6 +198,16 @@ def _rodar_etapas(video: Path, etapa: str, manual: bool, refazer: bool, ids, opc
     extra = dict(opcoes or {})
     cfg = {**C.config_do_episodio(video, extra.pop("template", None)), **extra}
     with contextlib.redirect_stdout(LOG), contextlib.redirect_stderr(LOG):
+        if etapa == "aprender":
+            iniciar_etapa("aprender")
+            C.aprender(cfg)
+            JOB["feitas"].append("aprender")
+            return
+        if etapa == "melhorar":
+            iniciar_etapa("melhorar")
+            C.melhorar_cortes(video, cfg, ids)
+            JOB["feitas"].append("melhorar")
+            return
         if etapa == "analisar":
             iniciar_etapa("analisar")
             C.analisar_cortes(video, cfg, ids)
@@ -208,6 +230,34 @@ def _rodar_etapas(video: Path, etapa: str, manual: bool, refazer: bool, ids, opc
             JOB["feitas"].append("cortar")
 
 
+FILA: list[Rodar] = []   # análises pedidas enquanto outro processo roda; começam sozinhas quando ele termina
+
+
+def _proximo():
+    """Inicia a próxima análise da fila. Se o processo anterior terminou com erro, a fila é descartada (o erro continua visível)."""
+    with TRAVA:
+        if JOB["rodando"] or not FILA:
+            return
+        if JOB["erro"]:
+            FILA.clear()
+            return
+        d = FILA.pop(0)
+        try:
+            video = video_de(d.episodio)
+        except HTTPException:
+            return
+        _iniciar(d, video)
+
+
+def _iniciar(d: Rodar, video: Path):
+    """Marca o job como rodando e dispara a thread (quem chama já segura a TRAVA)."""
+    plano = {"tudo": ["transcrever", "selecionar", "cortar"], "cortes": ["transcrever", "selecionar"]}.get(d.etapa, [d.etapa])
+    JOB.update(rodando=True, etapa=d.etapa, episodio=video.name, erro=None, plano=plano, feitas=[], t0=time.time(), lote=None)
+    C.CANCELAR.clear()
+    threading.Thread(target=executar, daemon=True, args=(video, d.etapa, d.manual, d.refazer, set(d.cortes) if d.cortes is not None else None,
+                                                          d.opcoes.model_dump(exclude_none=True) if d.opcoes else None)).start()
+
+
 def executar(video: Path, etapa: str, manual: bool, refazer: bool, ids=None, opcoes=None):
     global LOG
     LOG = Log()
@@ -222,6 +272,7 @@ def executar(video: Path, etapa: str, manual: bool, refazer: bool, ids=None, opc
     finally:
         JOB["rodando"] = False
         C.CANCELAR.clear()
+    _proximo()
 
 
 def executar_lote(videos: list[Path], refazer: bool, opcoes, gerar_videos: bool = True):
@@ -247,6 +298,7 @@ def executar_lote(videos: list[Path], refazer: bool, opcoes, gerar_videos: bool 
     finally:
         JOB.update(rodando=False, lote=None)
         C.CANCELAR.clear()
+    _proximo()
 
 
 # ----------------------------------------------------------------- helpers
@@ -425,13 +477,14 @@ def rodar(d: Rodar):
     video = video_de(d.episodio)
     with TRAVA:
         if JOB["rodando"]:
-            raise HTTPException(409, "Já existe um processo rodando.")
-        plano = {"tudo": ["transcrever", "selecionar", "cortar"], "cortes": ["transcrever", "selecionar"]}.get(d.etapa, [d.etapa])
-        JOB.update(rodando=True, etapa=d.etapa, episodio=video.name, erro=None, plano=plano, feitas=[], t0=time.time(), lote=None)
-        C.CANCELAR.clear()
-    threading.Thread(target=executar, daemon=True, args=(video, d.etapa, d.manual, d.refazer, set(d.cortes) if d.cortes is not None else None,
-                                                              d.opcoes.model_dump(exclude_none=True) if d.opcoes else None)).start()
-    return {"ok": True}
+            if d.etapa != "analisar":
+                raise HTTPException(409, "Já existe um processo rodando.")
+            chave = lambda x: (x.episodio, tuple(sorted(x.cortes)) if x.cortes is not None else None)
+            if all(chave(x) != chave(d) for x in FILA):
+                FILA.append(d)
+            return {"ok": True, "fila": len(FILA)}
+        _iniciar(d, video)
+    return {"ok": True, "fila": 0}
 
 
 @app.post("/api/rodar-lote")
@@ -511,6 +564,7 @@ def cancelar_job():
     """Cancela o processo em andamento. A transcrição para no próximo trecho; Claude e ffmpeg são encerrados na hora."""
     if not JOB["rodando"]:
         raise HTTPException(409, "Nenhum processo em andamento.")
+    FILA.clear()
     C.CANCELAR.set()
     try:
         import psutil
@@ -650,7 +704,7 @@ def status_render(ep: str, o: OpcoesRender):
         if i in por_id:
             c = por_id[i]
             videos.append({**base, "titulo": c["titulo"], "descricao": c.get("descricao", ""), "hashtags": c.get("hashtags", []),
-                           "corte": i, "estado": estados[i]["estado"], "duracao": round((c["fim"] - c["inicio"]) / (c.get("velocidade") or 1), 1)})
+                           "corte": i, "tipo": c.get("tipo", "short"), "thumb": (saida / f"thumb_{i}.jpg").exists(), "estado": estados[i]["estado"], "duracao": round(C.duracao_efetiva(c) / (c.get("velocidade") or 1), 1)})
         else:  # corte removido: o texto vem do .txt gravado junto com o vídeo
             titulo, descricao, tags = (r or {}).get("titulo") or f.stem, "", []
             txt = saida / (f.stem + ".txt")
@@ -661,6 +715,79 @@ def status_render(ep: str, o: OpcoesRender):
                 tags = partes[2].split() if len(partes) > 2 else []
             videos.append({**base, "titulo": titulo, "descricao": descricao, "hashtags": tags, "corte": None, "estado": "sem_corte", "duracao": None})
     return {"cortes": estados, "videos": videos}
+
+
+@app.put("/api/episodios/{ep}/thumbs/{cid}")
+async def salvar_thumb(ep: str, cid: str, request: Request):
+    """Recebe a thumbnail montada no painel (JPEG, até 5 MB) e grava em saida/<ep>/thumb_<id>.jpg."""
+    video = video_de(ep)
+    if not re.fullmatch(r"[0-9a-f]{6}", cid):
+        raise HTTPException(400, "Id de corte inválido.")
+    corpo = await request.body()
+    if len(corpo) > 5_000_000 or corpo[:2] != bytes([255, 216]):
+        raise HTTPException(400, "Envie um JPEG de até 5 MB.")
+    destino = C.SAIDA / video.stem
+    destino.mkdir(parents=True, exist_ok=True)
+    (destino / f"thumb_{cid}.jpg").write_bytes(corpo)
+    return {"ok": True}
+
+
+@app.delete("/api/episodios/{ep}/thumbs/{cid}")
+def apagar_thumb(ep: str, cid: str):
+    video = video_de(ep)
+    (C.SAIDA / video.stem / f"thumb_{Path(cid).name}.jpg").unlink(missing_ok=True)
+    return {"ok": True}
+
+
+# ---- resultados reais e lições aprendidas
+class Resultado(BaseModel):
+    plataforma: str = Field("", max_length=40)
+    postado_em: str = Field("", max_length=20)
+    views: int | None = Field(None, ge=0)
+    curtidas: int | None = Field(None, ge=0)
+    comentarios: int | None = Field(None, ge=0)
+    compartilhamentos: int | None = Field(None, ge=0)
+    retencao_pct: float | None = Field(None, ge=0, le=100)
+    observacao: str = Field("", max_length=500)
+
+
+@app.get("/api/desempenho")
+def desempenho():
+    """Resultados registrados + lições do Claude + correlação local entre a nota prevista e as visualizações."""
+    dados = C.ler_desempenho()
+    return {"resultados": dados, "licoes": C.ler_licoes(), "correlacao": C.correlacoes(dados)}
+
+
+@app.put("/api/episodios/{ep}/desempenho/{cid}")
+def registrar_desempenho(ep: str, cid: str, r: Resultado):
+    """Grava o resultado real de um vídeo postado, junto com um retrato do corte (nota prevista, abertura, duração)."""
+    video = video_de(ep)
+    corte = next((c for c in garantir_ids(video) if c["id"] == cid), None)
+    if not corte:
+        raise HTTPException(404, "Corte não encontrado.")
+    a = C.ler_analises(video).get(cid) or {}
+    dados_t = dados_transcricao(video)
+    palavras = [w for s in (dados_t or {}).get("segmentos", []) for w in s["palavras"]]
+    virtuais = C.palavras_virtuais(palavras, corte) if palavras else []
+    chave = f"{video.stem}|{cid}"
+    todos = C.ler_desempenho()
+    todos[chave] = {
+        "episodio": video.stem, "corte": cid, "titulo": corte.get("titulo", ""), "tipo": corte.get("tipo", "short"),
+        "duracao_s": round(C.duracao_efetiva(corte) / (corte.get("velocidade") or 1)),
+        "nota_prevista": a.get("nota"), "criterios": {k: v["nota"] for k, v in (a.get("criterios") or {}).items()},
+        "abertura": " ".join(w["p"] for w in virtuais if w["inicio"] < corte["inicio"] + 3)[:200],
+        **r.model_dump(), "registrado_em": time.time(),
+    }
+    C.gravar_desempenho(todos)
+    return {"ok": True, "n": len(todos)}
+
+
+@app.delete("/api/desempenho/{chave:path}")
+def apagar_desempenho(chave: str):
+    todos = C.ler_desempenho()
+    todos.pop(chave, None)
+    C.gravar_desempenho(todos)
+    return {"ok": True}
 
 
 @app.get("/api/episodios/{ep}/analises")
@@ -716,7 +843,7 @@ def listar_templates():
 @app.post("/api/templates")
 def criar_template(t: TemplateIn):
     usuario = C.ler_templates_arquivo().get("usuario", [])
-    novo = {"id": C.novo_id("u-"), "nome": t.nome.strip(), "descricao": t.descricao.strip(), "prompt": t.prompt.strip()}
+    novo = {"id": C.novo_id("u-"), "nome": t.nome.strip(), "descricao": t.descricao.strip(), "prompt": t.prompt.strip(), "tipo": t.tipo}
     _salvar_templates(usuario + [novo])
     return {"id": novo["id"]}
 
@@ -729,7 +856,7 @@ def editar_template(tid: str, t: TemplateIn):
     for x in usuario:
         if x["id"] == tid:
             x.pop("config", None)
-            x.update(nome=t.nome.strip(), descricao=t.descricao.strip(), prompt=t.prompt.strip())
+            x.update(nome=t.nome.strip(), descricao=t.descricao.strip(), prompt=t.prompt.strip(), tipo=t.tipo)
     _salvar_templates(usuario)
     return {"ok": True}
 

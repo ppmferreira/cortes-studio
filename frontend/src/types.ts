@@ -18,6 +18,8 @@ export interface LogoCfg {
   logo_posicao: PosLogo
   logo_tamanho: number
   logo_opacidade: number
+  logo_posicao_longo: PosLogo
+  logo_tamanho_longo: number
 }
 
 /** Padrões de geração e de vídeo/legenda (valem para todos os episódios). */
@@ -36,6 +38,7 @@ export interface EstiloCfg {
   folga_fim: number
   velocidade_padrao: number
   usar_logo: boolean
+  nota_minima: number
 }
 
 /** Configuração efetiva de um episódio: os padrões globais mais o prompt do template padrão. */
@@ -50,6 +53,7 @@ export interface Template {
   descricao: string
   builtin: boolean
   prompt: string
+  tipo: 'short' | 'longo'
 }
 
 export interface Geral extends EstiloCfg, LogoCfg {
@@ -88,6 +92,10 @@ export interface Corte {
   hashtags: string[]
   id: string
   velocidade: number
+  tipo?: 'short' | 'longo'
+  melhorado_de?: string
+  trechos?: [number, number][] | null   // partes mantidas do corte (null = corte inteiro)
+  thumb?: { linha1?: string; linha2?: string }
 }
 
 export interface Segmento {
@@ -96,7 +104,7 @@ export interface Segmento {
   texto: string
 }
 
-export type Etapa = 'tudo' | 'cortes' | 'transcrever' | 'selecionar' | 'cortar' | 'analisar'
+export type Etapa = 'tudo' | 'cortes' | 'transcrever' | 'selecionar' | 'cortar' | 'analisar' | 'melhorar' | 'aprender'
 
 export interface Job {
   rodando: boolean
@@ -112,6 +120,7 @@ export interface Job {
   eta_s: number | null
   lote: { i: number; n: number } | null
   log: string
+  fila?: number   // análises esperando o processo atual terminar
 }
 
 export interface Palavra {
@@ -134,6 +143,8 @@ export interface VideoGerado {
   descricao: string
   hashtags: string[]
   corte: string | null
+  tipo?: 'short' | 'longo'
+  thumb?: boolean
   estado: EstadoRender
   gerado_em: number
   duracao: number | null
@@ -149,12 +160,17 @@ export interface OpcoesRender {
   duracao_max?: number
   instrucoes_extras?: string
   adicionar?: boolean
+  tipo_corte?: 'short' | 'longo'
+  filtrar_por_nota?: boolean
+  substituir?: boolean
+  nota_minima?: number
 }
 
 export interface TemplateIn {
   nome: string
   descricao: string
   prompt: string
+  tipo: 'short' | 'longo'
 }
 
 export interface Importacao {
@@ -174,6 +190,29 @@ export interface CriterioViral {
 }
 
 /** Análise de potencial de viralização de um corte (nota de 0 a 10, calculada por média ponderada dos critérios). */
+export interface Resultado {
+  plataforma: string
+  postado_em: string
+  views: number | null
+  curtidas: number | null
+  comentarios: number | null
+  compartilhamentos: number | null
+  retencao_pct: number | null
+  observacao: string
+}
+
+export interface ResultadoSalvo extends Resultado {
+  titulo: string
+  tipo: 'short' | 'longo'
+  nota_prevista: number | null
+}
+
+export interface Desempenho {
+  resultados: Record<string, ResultadoSalvo>
+  licoes: { atualizado_em?: number; n_resultados?: number; resumo?: string; calibracao?: string; licoes?: { tipo: string; texto: string; forca: string }[] }
+  correlacao: { n: number; nota: number | null; criterios: Record<string, number | null> }
+}
+
 export interface Analise {
   nota: number
   veredito: string

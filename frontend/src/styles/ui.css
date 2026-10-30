@@ -147,3 +147,20 @@ dialog.dialog--sm { width: min(440px, calc(100vw - 32px)); }
 .confirm { display: flex; gap: var(--sp-3); align-items: flex-start; line-height: var(--lh-md); }
 .confirm > svg { width: 28px; height: 28px; flex: none; color: var(--text-2); }
 .confirm--perigo > svg { color: var(--warning); }
+
+/* lista aberta do <select>: o navegador não herda o tema escuro sozinho */
+select.input { color-scheme: dark; }
+:root[data-theme='light'] select.input { color-scheme: light; }
+select.input option { background: var(--surface-2); color: var(--text-1); }
+
+/* menu do botão Novo */
+.menu { position: relative; display: inline-flex; }
+.menu__lista { position: absolute; bottom: calc(100% + 6px); left: 0; z-index: 20; min-width: 280px; padding: 6px; border-radius: 12px;
+  background: var(--surface-2); border: 1px solid var(--border, rgba(255,255,255,.12)); box-shadow: 0 8px 24px rgba(0,0,0,.4); display: grid; gap: 2px; }
+.menu__item { display: grid; gap: 2px; text-align: left; padding: 10px 12px; border-radius: 8px; background: none; border: 0; cursor: pointer; color: var(--text-1); }
+.menu__item:hover, .menu__item:focus-visible { background: var(--surface-3); }
+.menu__item small { color: var(--text-2); }
+
+.menu__lista--baixo { bottom: auto; top: calc(100% + 6px); }
+.menu__lista--dir { left: auto; right: 0; }
+.menu__item:disabled { opacity: .5; cursor: default; }

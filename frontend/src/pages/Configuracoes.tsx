@@ -29,7 +29,7 @@ export function Configuracoes({ estado, aoMudou, aviso, aoConta }: {
     await acao(() => (alvo && !alvo.builtin ? api.editarTemplate(alvo.id, t) : api.criarTemplate(t)), 'Template salvo')
     setDlg(null)
   }
-  const duplicar = (t: Template) => acao(() => api.criarTemplate({ nome: `${t.nome} (cópia)`, descricao: t.descricao, prompt: t.prompt }), 'Template duplicado')
+  const duplicar = (t: Template) => acao(() => api.criarTemplate({ nome: `${t.nome} (cópia)`, descricao: t.descricao, prompt: t.prompt, tipo: t.tipo }), 'Template duplicado')
 
   async function enviarLogo(f: File) {
     try {
@@ -81,7 +81,7 @@ export function Configuracoes({ estado, aoMudou, aviso, aoConta }: {
           <label className="field" style={{ maxWidth: 420, marginBottom: 'var(--sp-5)' }}><span>Template padrão ao pedir cortes ao Claude</span>
             <select className="input" value={estado.template_ativo} onChange={e => void acao(() => api.templatePadrao(e.target.value || null), 'Template padrão alterado')}>
               <option value="">Nenhum (eu escrevo o prompt)</option>
-              {estado.templates.map(t => <option key={t.id} value={t.id}>{t.nome}</option>)}
+              {estado.templates.map(t => <option key={t.id} value={t.id}>{t.nome}{t.tipo === 'longo' ? ' (vídeo longo)' : ''}</option>)}
             </select></label>
           <div className="tpl-grid">
             {estado.templates.map(t => (
@@ -90,6 +90,7 @@ export function Configuracoes({ estado, aoMudou, aviso, aoConta }: {
                   <h2 className="t-heading">{t.nome}</h2>
                   {t.id === estado.template_ativo && <Badge tone="ok">Padrão</Badge>}
                   {t.builtin && <Badge>Pronto</Badge>}
+                  <Badge>{t.tipo === 'longo' ? 'Vídeo longo' : 'Short'}</Badge>
                 </div>
                 <p className="t-muted">{t.descricao || 'Sem descrição.'}</p>
                 <p className="tpl__brief t-meta"><Icon name="sparkle" /> {t.prompt}</p>
@@ -118,6 +119,9 @@ export function Configuracoes({ estado, aoMudou, aviso, aoConta }: {
                 {num('duracao_min', 'Duração mínima (s)')}
                 {num('duracao_max', 'Duração máxima (s)')}
               </div>
+              <label className="field" style={{ maxWidth: 320 }}><span>Meta de nota viral (0 a 10)</span>
+                <input className="input t-num" type="number" min={0} max={10} step={0.5} value={geral.nota_minima} onChange={e => set({ nota_minima: Number(e.target.value) })} /></label>
+              <span className="t-meta">Ao pedir cortes ao Claude, só ficam os que atingirem essa nota. No editor, cortes abaixo dela aparecem apagados.</span>
               {geral.duracao_min >= geral.duracao_max && <span className="t-meta warn-text">A duração mínima precisa ser menor que a máxima.</span>}
               <div className="field"><span>Velocidade padrão dos cortes</span>
                 <div className="chips" role="radiogroup" aria-label="Velocidade padrão">
@@ -196,9 +200,17 @@ export function Configuracoes({ estado, aoMudou, aviso, aoConta }: {
                   <input type="range" min={8} max={45} value={geral.logo_tamanho} onChange={e => set({ logo_tamanho: Number(e.target.value) })} /></label>
                 <label className="field"><span>Opacidade · {geral.logo_opacidade}%</span>
                   <input type="range" min={20} max={100} value={geral.logo_opacidade} onChange={e => set({ logo_opacidade: Number(e.target.value) })} /></label>
+                <div className="field"><span>Posição nos vídeos longos (16:9)</span>
+                  <div className="chips" role="radiogroup" aria-label="Posição da logo nos vídeos longos">
+                    {POSICOES_LOGO.filter(p => p.id !== 'topo-centro' && p.id !== 'centro' && p.id !== 'baixo-centro').map(p =>
+                      <Chip key={p.id} selected={geral.logo_posicao_longo === p.id} onClick={() => set({ logo_posicao_longo: p.id })}>{p.nome}</Chip>)}
+                  </div></div>
+                <label className="field"><span>Tamanho nos vídeos longos · {geral.logo_tamanho_longo}% da largura</span>
+                  <input type="range" min={4} max={20} value={geral.logo_tamanho_longo} onChange={e => set({ logo_tamanho_longo: Number(e.target.value) })} /></label>
                 <span className="t-meta">Trocar a logo ou a posição deixa os vídeos já gerados como “Desatualizados”.</span>
               </div>
               <PreviaMarca geral={geral} />
+              <PreviaMarcaLonga geral={geral} />
             </div>
           </section>
 
@@ -246,6 +258,24 @@ function PreviaMarca({ geral }: { geral: Geral }) {
         )}
       </div>
       <span className="t-meta">Prévia (vídeo 16:9)</span>
+    </div>
+  )
+}
+
+/** Prévia da logo em um vídeo longo (16:9). */
+function PreviaMarcaLonga({ geral }: { geral: Geral }) {
+  const lw = (1920 * geral.logo_tamanho_longo) / 100
+  const { x, y } = posicaoLogo(geral.logo_posicao_longo, false, lw, lw, 1920, 1080)
+  return (
+    <div className="marca__prev">
+      <div className="phone phone--h marca__phone" aria-label="Prévia da logo no vídeo longo" style={{ position: 'relative' }}>
+        <div className="phone__video" />
+        {geral.logo && geral.usar_logo && (
+          <img src={urlLogo(geral.logo)} alt="" className="marca__logo"
+               style={{ left: `${(x / 1920) * 100}%`, top: `${(y / 1080) * 100}%`, width: `${(lw / 1920) * 100}%`, opacity: geral.logo_opacidade / 100 }} />
+        )}
+      </div>
+      <span className="t-meta">Prévia (vídeo longo 16:9)</span>
     </div>
   )
 }

@@ -65,3 +65,21 @@ Tempos em segundos do episódio original. A duração final do vídeo é `(fim -
 ## Arquivos de lote (`.bat`)
 
 `iniciar.bat` (painel; grava erros em `logs\servidor.err.log` e liga `-X faulthandler`), `instalar.bat` (ffmpeg via winget, venv, dependências, bibliotecas CUDA), `rodar.bat` (pipeline completo por linha de comando).
+
+## Campos de vídeo longo
+
+`cortes.json` ganhou `tipo` (`"short"` ou `"longo"`, ausente = `short`) e `thumb` (`{linha1, linha2}`). `config.json` aceita `legendas_longo` (padrão `false`), ainda sem controle no painel: edite o arquivo para queimar legendas em vídeos longos.
+
+## Templates: campo `tipo`
+
+Cada template tem `tipo` (`"short"` ou `"longo"`; ausente = `short`). Os prontos estão em `TEMPLATES_BASE` (`cortes.py`): shorts, viral, historias, debate, humor, educativo, frases, emocional (Shorts) e capitulos, historia_longa, debate_longo, aula, convidado (vídeos longos). Os do usuário em `templates.json` guardam `tipo` junto com `nome`, `descricao` e `prompt`.
+
+`esforco_claude` (`config.json`, padrão `medium`): raciocínio do Claude no modo conta (`--effort`). `low` é mais rápido e `high` mais cuidadoso. Só vale no modo conta; `modelo_claude` agora também vale nele.
+
+`nota_minima` (padrão 7, 0 a 10): meta de nota viral. Opções de uma geração: `filtrar_por_nota` e `nota_minima` (em `opcoes` de `/api/rodar` e `/api/rodar-lote`).
+
+## Arquivos de aprendizado
+
+`desempenho.json` (resultados registrados + retrato do corte) e `licoes.json` (lições do Claude, resumo, calibração e correlação) ficam na raiz do projeto e estão no `.gitignore` (dados do seu canal).
+
+Logo em vídeos longos: `logo_posicao_longo` (`topo-esquerda`, `topo-direita`, `baixo-esquerda`, `baixo-direita`; padrão `topo-direita`) e `logo_tamanho_longo` (3 a 30, padrão 9, em % da largura). Aplicados por `cfg_do_corte()` aos cortes `longo`.

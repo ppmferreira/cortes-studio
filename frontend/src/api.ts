@@ -1,4 +1,4 @@
-import type { Analise, ClaudeStatus, Corte, Importacao, Estado, Etapa, Geral, Job, OpcoesRender, Palavra, Segmento, StatusRender, TemplateIn } from './types'
+import type { Analise, Desempenho, Resultado, ClaudeStatus, Corte, Importacao, Estado, Etapa, Geral, Job, OpcoesRender, Palavra, Segmento, StatusRender, TemplateIn } from './types'
 
 async function req<T>(url: string, init?: RequestInit): Promise<T> {
   const r = await fetch(url, init)
@@ -30,6 +30,12 @@ export const api = {
   salvarGeral: (g: Geral) => req('/api/config', json('PUT', g)),
   statusRender: (nome: string, opcoes: OpcoesRender = {}) => req<StatusRender>(`${ep(nome)}/status-render`, json('POST', opcoes)),
   palavras: (nome: string, ini: number, fim: number) => req<Palavra[]>(`${ep(nome)}/palavras?ini=${ini}&fim=${fim}`),
+  salvarThumb: (nome: string, id: string, jpeg: Blob) =>
+    req(`${ep(nome)}/thumbs/${id}`, { method: 'PUT', headers: { 'Content-Type': 'image/jpeg' }, body: jpeg }),
+  desempenho: () => req<Desempenho>('/api/desempenho'),
+  salvarResultado: (nome: string, id: string, r: Resultado) => req(`${ep(nome)}/desempenho/${id}`, json('PUT', r)),
+  apagarResultado: (chave: string) => req(`/api/desempenho/${encodeURIComponent(chave)}`, { method: 'DELETE' }),
+  apagarThumb: (nome: string, id: string) => req(`${ep(nome)}/thumbs/${id}`, { method: 'DELETE' }),
   apagarVideo: (nome: string, video: string) => req(`${ep(nome)}/videos/${encodeURIComponent(video)}`, { method: 'DELETE' }),
   criarTemplate: (t: TemplateIn) => req<{ id: string }>('/api/templates', json('POST', t)),
   editarTemplate: (id: string, t: TemplateIn) => req(`/api/templates/${id}`, json('PUT', t)),

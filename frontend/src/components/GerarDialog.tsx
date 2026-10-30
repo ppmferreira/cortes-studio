@@ -20,6 +20,7 @@ interface Props {
   modoInicial?: 'existentes' | 'claude'
   aoFechar: () => void
   aoGerar: (p: Pedido) => void
+  aoCriouTemplate?: () => void   // pede ao app para recarregar a lista de templates
 }
 
 const ROTULO: Record<EstadoRender, { texto: string; tom?: 'ok' | 'run' | 'err' }> = {
@@ -33,7 +34,8 @@ const ROTULO: Record<EstadoRender, { texto: string; tom?: 'ok' | 'run' | 'err' }
  * Gerar: um episódio ou vários; usar os cortes que já existem ou pedir cortes ao Claude (quantidade, duração e prompt);
  * e as opções do vídeo. Tudo vale só para esta geração. O template é só um ponto de partida para o prompt.
  */
-export function GerarDialog({ aberto, ep, episodios, templates, cortes, temClaude, modoInicial, aoFechar, aoGerar }: Props) {
+export function GerarDialog({ aberto, ep, episodios, templates, cortes, temClaude, modoInicial, aoFechar, aoGerar, aoCriouTemplate }: Props) {
+  const foco: 'ia' | 'videos' = modoInicial === 'claude' ? 'ia' : 'videos'   // IA = criar cortes; vídeos = renderizar os cortes
   const [escopo, setEscopo] = useState<'este' | 'varios'>('este')
   const [modo, setModo] = useState<'existentes' | 'claude'>('existentes')
   const [tpl, setTpl] = useState('')
@@ -41,6 +43,9 @@ export function GerarDialog({ aberto, ep, episodios, templates, cortes, temClaud
   const [qtd, setQtd] = useState(6)
   const [dmin, setDmin] = useState(30)
   const [dmax, setDmax] = useState(90)
+  const [filtrar, setFiltrar] = useState(true)      // pede o dobro, analisa e fica com os de nota >= meta
+  const [notaMin, setNotaMin] = useState(7)
+  const [longo, setLongo] = useState(false)   // vídeos longos (capítulos 16:9) em vez de shorts
   const [formato, setFormato] = useState<'vertical' | 'horizontal'>('vertical')
   const [legendas, setLegendas] = useState(true)
   const [gerarVideos, setGerarVideos] = useState(false)
@@ -49,16 +54,21 @@ export function GerarDialog({ aberto, ep, episodios, templates, cortes, temClaud
   const [marcados, setMarcados] = useState<Set<string>>(new Set())
   const [eps, setEps] = useState<Set<string>>(new Set())
   const [refazerLote, setRefazerLote] = useState(false)
+  const [nomeTpl, setNomeTpl] = useState('')
+  const [salvandoTpl, setSalvandoTpl] = useState(false)
+  const [erroTpl, setErroTpl] = useState('')
 
   // ao abrir: volta para os padrões do episódio
   useEffect(() => {
     if (!aberto) return
     const c = ep.config
     setEscopo('este')
-    setModo(modoInicial ?? (cortes.length ? 'existentes' : 'claude'))
-    setTpl(ep.template); setPrompt(c.instrucoes_extras)
+    setModo(foco === 'ia' ? 'claude' : 'existentes')
+    const doEp = templates.find(t => t.id === ep.template)
+    if (doEp && doEp.tipo === 'short') { setTpl(doEp.id); setPrompt(c.instrucoes_extras) }
+    else { const p = templates.find(t => t.tipo === 'short'); setTpl(p?.id ?? ''); setPrompt(p?.prompt ?? '') }
     setQtd(c.qtd_cortes); setDmin(c.duracao_min); setDmax(c.duracao_max)
-    setFormato(c.formato); setLegendas(c.legendas)
+    setFormato(c.formato); setLegendas(c.legendas); setLongo(false); setFiltrar(true); setNotaMin(c.nota_minima ?? 7)
     setGerarVideos(false); setAdicionar(true); setMarcados(new Set()); setEps(new Set([ep.nome])); setRefazerLote(false)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [aberto])
@@ -78,6 +88,13 @@ export function GerarDialog({ aberto, ep, episodios, templates, cortes, temClaud
   const escolherTemplate = (id: string) => {
     setTpl(id)
     setPrompt(templates.find(t => t.id === id)?.prompt ?? '')   // sem template: você escreve o seu
+  }
+  const escolherTipo = (l: boolean) => {
+    setLongo(l)
+    const c = ep.config
+    const p = templates.find(t => t.tipo === (l ? 'longo' : 'short'))   // primeiro template do tipo (o prompt acompanha)
+    setTpl(p?.id ?? ''); setPrompt(p?.prompt ?? '')
+    if (l) { setQtd(3); setDmin(480); setDmax(1500) } else { setQtd(c.qtd_cortes); setDmin(c.duracao_min); setDmax(c.duracao_max) }
   }
   const escolherEscopo = (e: 'este' | 'varios') => { setEscopo(e); setGerarVideos(e === 'varios') }
 
@@ -102,7 +119,7 @@ export function GerarDialog({ aberto, ep, episodios, templates, cortes, temClaud
   const segundos = cortes.filter(c => marcados.has(c.id)).reduce((s, c) => s + (c.fim - c.inicio) / (c.velocidade || 1), 0)
 
   const opcoesVideo: OpcoesRender = { formato, legendas }
-  const opcoesSelecao: OpcoesRender = { qtd_cortes: qtd, duracao_min: dmin, duracao_max: dmax, instrucoes_extras: prompt.trim() }
+  const opcoesSelecao: OpcoesRender = { qtd_cortes: qtd, duracao_min: dmin, duracao_max: dmax, instrucoes_extras: prompt.trim(), filtrar_por_nota: filtrar && qtd > 1 && notaMin > 0, nota_minima: notaMin, ...(longo ? { tipo_corte: 'longo' as const } : {}) }
   const selecaoValida = qtd >= 1 && dmin >= 5 && dmin < dmax
 
   const lista = [...eps]
@@ -117,7 +134,7 @@ export function GerarDialog({ aberto, ep, episodios, templates, cortes, temClaud
   } else if (escopo === 'este') {
     podeGerar = selecaoValida && !semClaude
     rotuloBotao = gerarVideos ? 'Escolher cortes e gerar' : 'Escolher cortes'
-    resumo = `${cortes.length && adicionar ? 'Mais ' : 'Até '}${qtd} cortes de ${dmin} a ${dmax} s${gerarVideos ? ' e os vídeos em seguida' : '. Você revisa antes de gerar os vídeos'}`
+    resumo = `${cortes.length && adicionar ? 'Mais ' : 'Até '}${qtd} ${longo ? 'vídeos longos' : 'cortes'} de ${dmin} a ${dmax} s${gerarVideos ? ' e os vídeos em seguida' : '. Você revisa antes de gerar os vídeos'}`
   } else {
     podeGerar = lista.length > 0 && selecaoValida && !semClaude
     rotuloBotao = `Rodar em ${lista.length || ''} ${lista.length === 1 ? 'episódio' : 'episódios'}`
@@ -134,9 +151,25 @@ export function GerarDialog({ aberto, ep, episodios, templates, cortes, temClaud
   }
 
   const doTemplate = templates.find(t => t.id === tpl)
+  const promptNovo = prompt.trim() !== '' && prompt.trim() !== (doTemplate?.prompt ?? '')   // prompt escrito ou editado: dá para guardar
+
+  async function salvarTemplate() {
+    setSalvandoTpl(true); setErroTpl('')
+    try {
+      const r = await api.criarTemplate({ nome: nomeTpl.trim(), descricao: '', prompt: prompt.trim(), tipo: longo ? 'longo' : 'short' })
+      aoCriouTemplate?.()
+      setTpl(r.id); setNomeTpl('')
+    } catch (e) { setErroTpl(e instanceof Error ? e.message : 'Não foi possível salvar.') }
+    finally { setSalvandoTpl(false) }
+  }
   const campoSelecao = (
     <fieldset className="fs">
       <legend>Como o Claude escolhe os cortes</legend>
+      <div className="tabs" role="radiogroup" aria-label="Tipo de corte" style={{ margin: 0 }}>
+        <Chip selected={!longo} onClick={() => escolherTipo(false)}>Shorts (9:16)</Chip>
+        <Chip selected={longo} onClick={() => escolherTipo(true)}>Vídeos longos (16:9)</Chip>
+      </div>
+      {longo && <span className="t-meta">Capítulos completos de vários minutos, em 16:9, sem legenda queimada. A thumbnail sai do editor de cada corte.</span>}
       <div className="grid-3">
         <label className="field"><span>Quantidade de cortes</span>
           <input className="input t-num" type="number" min={1} value={qtd} onChange={e => setQtd(Number(e.target.value))} /></label>
@@ -149,40 +182,46 @@ export function GerarDialog({ aberto, ep, episodios, templates, cortes, temClaud
       <label className="field"><span>Template (ponto de partida do prompt)</span>
         <select className="input" value={tpl} onChange={e => escolherTemplate(e.target.value)}>
           <option value="">Nenhum — eu escrevo o prompt</option>
-          {templates.map(t => <option key={t.id} value={t.id}>{t.nome}</option>)}
+          {templates.filter(t => t.tipo === (longo ? 'longo' : 'short')).map(t => <option key={t.id} value={t.id}>{t.nome}</option>)}
         </select></label>
+      {doTemplate?.descricao && <span className="t-meta">{doTemplate.descricao}</span>}
       <label className="field"><span>Prompt para o Claude{doTemplate && prompt.trim() !== doTemplate.prompt ? ' · editado' : ''}</span>
         <textarea className="input" rows={4} value={prompt} onChange={e => setPrompt(e.target.value)}
                   placeholder="Diga o que procurar: tipo de momento, tom, estrutura do trecho, o que evitar… (vale só para esta geração)" /></label>
+      {promptNovo && (
+        <div className="row" style={{ alignItems: 'flex-end', gap: 'var(--sp-3)' }}>
+          <label className="field" style={{ flex: 1 }}><span>Guardar este prompt como template ({longo ? 'vídeo longo' : 'short'})</span>
+            <input className="input" value={nomeTpl} maxLength={60} onChange={e => setNomeTpl(e.target.value)} placeholder="Nome do template" /></label>
+          <Button size="sm" disabled={!nomeTpl.trim() || salvandoTpl} onClick={salvarTemplate}>{salvandoTpl ? 'Salvando…' : 'Salvar template'}</Button>
+        </div>
+      )}
+      {erroTpl && <span className="t-meta warn-text">{erroTpl}</span>}
+      <div className="row" style={{ alignItems: 'center', gap: 'var(--sp-3)', flexWrap: 'wrap' }}>
+        <Switch checked={filtrar} onChange={setFiltrar}>Ficar só com cortes de nota viral a partir de</Switch>
+        <input className="input t-num" type="number" min={1} max={10} step={0.5} value={notaMin} disabled={!filtrar} style={{ width: 80 }}
+               onChange={e => setNotaMin(Number(e.target.value))} aria-label="Nota mínima" />
+      </div>
+      {filtrar && <span className="t-meta">O Claude escolhe o dobro de candidatos, analisa todos e mantém os melhores que chegarem a {notaMin}. Demora um pouco mais, mas evita cortes fracos.</span>}
       <Switch checked={gerarVideos} onChange={setGerarVideos}>Gerar os vídeos logo depois de escolher os cortes (senão você revisa os cortes antes)</Switch>
     </fieldset>
   )
 
   return (
-    <Dialog aberto={aberto} titulo="Gerar" aoFechar={aoFechar} largo
+    <Dialog aberto={aberto} titulo={foco === 'ia' ? 'Criar cortes com IA' : 'Gerar vídeos'} aoFechar={aoFechar} largo
             rodape={<>
               <span className="t-meta" style={{ marginRight: 'auto' }}>{resumo}</span>
               <Button variant="text" onClick={aoFechar}>Cancelar</Button>
               <Button variant="brand" icon="scissors" disabled={!podeGerar} onClick={confirmar}>{rotuloBotao}</Button>
             </>}>
+      {foco === 'ia' && (
       <div className="tabs" role="tablist" style={{ margin: 0 }}>
         <Chip selected={escopo === 'este'} onClick={() => escolherEscopo('este')}>Só este episódio</Chip>
         <Chip selected={escopo === 'varios'} count={episodios.length} onClick={() => escolherEscopo('varios')}>Vários episódios</Chip>
       </div>
+      )}
 
       {escopo === 'este' && (
         <>
-          <div className="gerar__modo" role="radiogroup" aria-label="Origem dos cortes">
-            <label className={'gerar__card' + (modo === 'existentes' ? ' gerar__card--on' : '')}>
-              <input type="radio" name="modo" checked={modo === 'existentes'} disabled={!cortes.length} onChange={() => setModo('existentes')} />
-              <span><b>Usar os cortes que já existem</b><span className="t-meta">{cortes.length ? `${cortes.length} cortes neste episódio` : 'Nenhum corte ainda'}</span></span>
-            </label>
-            <label className={'gerar__card' + (modo === 'claude' ? ' gerar__card--on' : '')}>
-              <input type="radio" name="modo" checked={modo === 'claude'} onChange={() => setModo('claude')} />
-              <span><b>Pedir cortes ao Claude</b><span className="t-meta">{ep.transcrito ? 'Com o prompt e os limites que você definir' : 'Transcreve primeiro e depois escolhe os trechos'}</span></span>
-            </label>
-          </div>
-
           {modo === 'claude' && (
             <>
               {cortes.length > 0 && (
@@ -225,7 +264,7 @@ export function GerarDialog({ aberto, ep, episodios, templates, cortes, temClaud
                         <input type="checkbox" checked={marcados.has(c.id)} onChange={() => alternar(c.id)} />
                         <span className="cut__num">{i + 1}</span>
                         <span className="gerar__body">
-                          <b className="truncate">{c.titulo}</b>
+                          <b className="truncate">{c.titulo}{c.tipo === 'longo' && <> <Badge>Longo</Badge></>}</b>
                           <span className="t-meta t-num">{hms(c.inicio)} – {hms(c.fim)} · {Math.round((c.fim - c.inicio) / vel)} s{vel !== 1 ? ` (${vel}×)` : ''}</span>
                         </span>
                         {emConflito.has(c.id) && <span className="gerar__warn" title="Este corte repete trecho de outro"><Icon name="warning" /></span>}
@@ -281,7 +320,7 @@ export function GerarDialog({ aberto, ep, episodios, templates, cortes, temClaud
         <div className="alert alert--error"><Icon name="warning" /><span>O Claude não está conectado. Clique no ícone da chave no topo para entrar com sua conta, ou use os cortes que já existem.</span></div>
       )}
 
-      {(escopo === 'varios' || modo === 'existentes' || gerarVideos) && (
+      {(escopo === 'varios' || modo === 'existentes' || gerarVideos) && !(modo === 'claude' && longo) && (
         <fieldset className="fs">
           <legend>Vídeo</legend>
           <div className="gerar__opts">
@@ -290,7 +329,7 @@ export function GerarDialog({ aberto, ep, episodios, templates, cortes, temClaud
                 <option value="vertical">Vertical 9:16</option>
                 <option value="horizontal">Horizontal 16:9</option>
               </select></label>
-            <Switch checked={legendas} onChange={setLegendas}>Legendas no vídeo</Switch>
+            <Switch checked={legendas} onChange={setLegendas}>Legendas nos shorts (vídeos longos seguem o padrão: sem legenda)</Switch>
             <span className="t-meta">Fonte, cor, posição e logo vêm dos padrões em Configurações.</span>
           </div>
         </fieldset>

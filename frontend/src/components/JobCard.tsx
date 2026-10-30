@@ -8,6 +8,8 @@ export const ROTULO_ETAPA: Record<string, string> = {
   selecionar: 'Claude escolhendo os cortes',
   cortar: 'Gerando os vídeos',
   analisar: 'Analisando o potencial de viralização',
+  melhorar: 'Claude melhorando os cortes',
+  aprender: 'Claude aprendendo com os resultados',
 }
 
 /** Processo em andamento, visível em qualquer página do painel, com progresso, tempo restante e cancelar. */

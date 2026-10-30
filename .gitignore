@@ -4,6 +4,8 @@ chave_api.txt
 .env.*
 config.json
 templates.json
+desempenho.json
+licoes.json
 
 # Dados do usuário: vídeos, transcrições, cortes, logos e logs
 entrada/

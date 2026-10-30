@@ -24,3 +24,11 @@
 - **Publicação direta no YouTube não existe.** Seria via YouTube Data API v3 (OAuth), com a limitação de que projetos não auditados só enviam como privado e a cota diária limita a ~6 envios.
 - **Memória:** transcrever episódios de 3 h com pouca RAM livre é arriscado (ver `operacao.md`).
 - **Sem testes automatizados.** A verificação tem sido manual (navegador e chamadas à API) e por testes pontuais com Claude simulado.
+
+## Thumbnails: o que não é feito
+
+As thumbnails são montadas localmente a partir de um quadro do episódio, com texto estilizado. **Não** há geração de arte por IA nem recorte de pessoas/remoção de fundo (o estilo de canais que usam rostos recortados sobre cenários dramáticos exige edição externa). O JPG pode ser baixado e finalizado em outro editor. Vídeos longos não têm legenda queimada por padrão e a prévia do editor não reproduz o 16:9 com logo.
+
+## Aprendizado: o que é e o que não é
+
+O Claude não é treinado: as lições são texto gerado a partir dos resultados que você registra e entram como contexto nos prompts. Com poucos vídeos (menos de uns 8) a correlação e as lições são hipóteses, não regras. Não há leitura automática das métricas das plataformas; o registro é manual. Visualizações dependem do horário, do alcance do canal e do tempo desde a postagem, então compare vídeos parecidos. A prévia do corte (*Ver como vai ficar*) pula as partes tiradas, como o vídeo gerado; o player normal do episódio toca tudo.

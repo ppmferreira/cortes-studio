@@ -86,3 +86,40 @@
 .detail__text p { margin: var(--sp-2) 0 0; padding: var(--sp-3); border-radius: var(--r-sm); background: var(--surface-3); line-height: 22px; }
 .transcript--flat { max-height: none; border: 0; background: transparent; padding: 0; }
 .shorts--side { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+
+.cutgroup { padding: 12px 12px 4px; text-transform: uppercase; letter-spacing: .06em; font-weight: 600; }
+
+.viralbar__acoes { display: inline-flex; align-items: center; gap: var(--sp-2); flex-wrap: wrap; }
+.cutli { display: flex; align-items: center; gap: var(--sp-2); }
+.cutli .cutrow { flex: 1; min-width: 0; }
+.cutli__check { width: 18px; height: 18px; flex: none; accent-color: #3ea6ff; cursor: pointer; }
+
+.cutrow--abaixo .cutrow__body { opacity: .6; }
+.cutrow--abaixo .cut__num { filter: saturate(.5); }
+
+.listbar { display: flex; align-items: center; justify-content: space-between; gap: var(--sp-2); flex-wrap: wrap; margin-bottom: var(--sp-2); }
+.editor__main .player { aspect-ratio: auto; height: min(42vh, 56vw); }
+.editor__main .player video { max-height: none; height: 100%; object-fit: contain; }
+
+.trechos__row { display: flex; flex-wrap: wrap; align-items: flex-end; gap: var(--sp-2); }
+.trechos__row .field { width: 110px; }
+.trechos__lista { display: grid; gap: 2px; margin-top: var(--sp-2); }
+
+.detail__top { grid-template-columns: 36px minmax(0, 1fr) auto auto; }
+
+/* buracos do corte (trechos pulados) na linha do tempo */
+.track__gap { position: absolute; top: 0; bottom: 0; border-radius: 2px; pointer-events: auto; background: repeating-linear-gradient(135deg, rgba(0,0,0,.78) 0 4px, rgba(0,0,0,.45) 4px 8px); box-shadow: inset 0 0 0 1px rgba(255,255,255,.18); }
+.track__cut[data-sel='true'] .track__gap { top: 0; bottom: 0; }
+
+.track__marca { position: absolute; top: 0; bottom: 0; background: rgba(62, 166, 255, .35); border: 1px solid #3ea6ff; border-radius: 2px; pointer-events: none; z-index: 1; }
+.track__gap { cursor: default; }
+.fino__ctl { margin-left: auto; display: inline-flex; align-items: center; gap: var(--sp-1); flex-wrap: wrap; }
+.scrub { width: 100%; display: grid; gap: 2px; }
+.scrub input[type='range'] { width: 100%; accent-color: #3ea6ff; }
+.scrub__row { display: flex; align-items: center; justify-content: center; gap: var(--sp-2); }
+.scrub__row button { height: 24px; padding: 0 8px; border: 0; border-radius: var(--r-sm); background: var(--surface-3); color: var(--text-1); font-size: var(--fs-xs); cursor: pointer; }
+.scrub__row button:hover { background: var(--pressed); }
+
+.track__gap { display: grid; place-items: center; overflow: visible; }
+.track__gapbtn { display: none; white-space: nowrap; height: 22px; padding: 0 8px; border: 0; border-radius: 999px; background: #fff; color: #111; font-size: 11px; font-weight: 600; cursor: pointer; box-shadow: 0 1px 4px rgba(0,0,0,.5); z-index: 3; }
+.track__gap:hover .track__gapbtn, .track__gapbtn:focus-visible { display: block; }

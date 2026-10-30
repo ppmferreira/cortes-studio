@@ -64,3 +64,24 @@ Base: `http://127.0.0.1:8765`. Documentação interativa gerada pelo FastAPI em 
 - `GET /media/saida/{episodio}/{arquivo}` — vídeo gerado (aceita `Range`).
 - `GET /media/logos/{nome}` — logo.
 - `GET /` — painel (`frontend/dist`); sem build, devolve um aviso em JSON.
+
+## Thumbnails (vídeos longos)
+
+| Rota | O que faz |
+|---|---|
+| `PUT /api/episodios/{ep}/thumbs/{id}` | Corpo = JPEG (até 5 MB, `Content-Type: image/jpeg`). Grava `saida/<ep>/thumb_<id>.jpg` |
+| `DELETE /api/episodios/{ep}/thumbs/{id}` | Apaga a thumbnail |
+
+O arquivo é servido por `/media/saida/{ep}/thumb_<id>.jpg`. Em `POST /api/rodar` e `/api/rodar-lote`, `opcoes.tipo_corte = "longo"` pede vídeos longos. `status-render` devolve `tipo` e `thumb` (existe arquivo) em cada vídeo.
+
+`POST/PUT /api/templates` aceitam `tipo` (`short` ou `longo`, padrão `short`); `GET /api/templates` e `/api/estado` devolvem `tipo` em cada template.
+
+`POST /api/rodar` com `etapa: "analisar"` enquanto outro processo roda não devolve 409: entra na fila e responde `{ok, fila: N}`; as demais etapas continuam devolvendo 409. `GET /api/job` inclui `fila` (quantidade de análises esperando).
+
+## Edição, melhoria e aprendizado
+
+- `POST /api/rodar` aceita `etapa: "melhorar"` (com `cortes: [ids]` e `opcoes.substituir`) e `etapa: "aprender"`.
+- `cortes.json` / `PUT /api/episodios/{ep}/cortes`: cada corte pode ter `trechos` (`[[ini, fim], ...]`, partes mantidas), `melhorado_de` (id do corte de origem), `tipo` e `thumb`.
+- `GET /api/desempenho` → `{resultados, licoes, correlacao}`.
+- `PUT /api/episodios/{ep}/desempenho/{id}` grava o resultado real de um vídeo postado (`plataforma`, `postado_em`, `views`, `curtidas`, `comentarios`, `compartilhamentos`, `retencao_pct`, `observacao`), junto com um retrato do corte (nota prevista, critérios, abertura, duração).
+- `DELETE /api/desempenho/{chave}` remove um resultado (`chave` = `<episódio>|<id do corte>`).

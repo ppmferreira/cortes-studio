@@ -38,16 +38,22 @@ export function TemplateDialog({ aberto, modelo, somenteLeitura, aoFechar, aoSal
   const [nome, setNome] = useState(modelo?.nome ?? '')
   const [descricao, setDescricao] = useState(modelo?.descricao ?? '')
   const [prompt, setPrompt] = useState(modelo?.prompt ?? '')
+  const [tipo, setTipo] = useState<'short' | 'longo'>(modelo?.tipo ?? 'short')
   const valido = nome.trim().length > 0 && prompt.trim().length > 0
   return (
     <Dialog aberto={aberto} titulo={somenteLeitura ? `Template: ${modelo?.nome}` : modelo ? 'Editar template' : 'Novo template'} aoFechar={aoFechar} largo
             rodape={<>
               <Button variant="text" onClick={aoFechar}>{somenteLeitura ? 'Fechar' : 'Cancelar'}</Button>
-              {!somenteLeitura && <Button variant="filled" disabled={!valido} onClick={() => aoSalvar({ nome: nome.trim(), descricao: descricao.trim(), prompt: prompt.trim() })}>Salvar template</Button>}
+              {!somenteLeitura && <Button variant="filled" disabled={!valido} onClick={() => aoSalvar({ nome: nome.trim(), descricao: descricao.trim(), prompt: prompt.trim(), tipo })}>Salvar template</Button>}
             </>}>
       {somenteLeitura && <div className="alert"><span>Templates prontos não podem ser editados. Use “Duplicar” para criar o seu a partir deste.</span></div>}
       <label className="field"><span>Nome</span>
         <input className="input" value={nome} disabled={somenteLeitura} maxLength={60} onChange={e => setNome(e.target.value)} placeholder="ex.: Momentos engraçados do convidado" /></label>
+      <label className="field"><span>Serve para</span>
+        <select className="input" value={tipo} disabled={somenteLeitura} onChange={e => setTipo(e.target.value as 'short' | 'longo')}>
+          <option value="short">Shorts (9:16)</option>
+          <option value="longo">Vídeos longos (16:9)</option>
+        </select></label>
       <label className="field"><span>Descrição (opcional)</span>
         <input className="input" value={descricao} disabled={somenteLeitura} onChange={e => setDescricao(e.target.value)} placeholder="Para que serve este template" /></label>
       <label className="field"><span>Prompt para o Claude</span>
