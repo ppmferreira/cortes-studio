@@ -2,6 +2,9 @@
 
 Formato: data · o que mudou. Mais recente primeiro. Atualize junto com cada alteração.
 
+## 2026-10-30 (README comercial)
+- `README.md` reescrito como apresentação do produto: proposta de valor, recursos (Shorts, vídeos longos, thumbnails, editor, nota viral, aprendizado), fluxo, início rápido, stack e limites. O passo a passo da linha de comando e a tabela do `config.json` saíram do README (continuam em `docs/configuracao.md` e `docs/operacao.md`).
+
 ## 2026-10-30 (gerar só este vídeo e thumbnail viral com IA)
 - **Gerar este vídeo:** botão no detalhe do corte que renderiza só aquele corte (salva antes o que estiver editado) e mostra o progresso na aba *Processo*.
 - **Thumbnail viral (IA):** o Claude lê o título, a descrição, o motivo, a nota e o texto falado do corte e sugere **3 variantes** de texto (duas linhas curtas em maiúsculas, com o gatilho de cada uma) e o **melhor momento** para o quadro. O editor de thumbnail abre já com a primeira variante e o quadro escolhido; dá para trocar de opção, ajustar zoom e salvar. Rota `POST /api/episodios/{ep}/thumb-ia/{id}`. Não gera arte nem recorta pessoas.
