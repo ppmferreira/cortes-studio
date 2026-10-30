@@ -35,6 +35,8 @@ export const api = {
   desempenho: () => req<Desempenho>('/api/desempenho'),
   salvarResultado: (nome: string, id: string, r: Resultado) => req(`${ep(nome)}/desempenho/${id}`, json('PUT', r)),
   apagarResultado: (chave: string) => req(`/api/desempenho/${encodeURIComponent(chave)}`, { method: 'DELETE' }),
+  thumbIA: (nome: string, id: string) =>
+    req<{ variantes: { linha1: string; linha2: string; gatilho: string }[]; melhor_momento: number; motivo_momento: string; dica: string }>(`${ep(nome)}/thumb-ia/${id}`, { method: 'POST' }),
   apagarThumb: (nome: string, id: string) => req(`${ep(nome)}/thumbs/${id}`, { method: 'DELETE' }),
   apagarVideo: (nome: string, video: string) => req(`${ep(nome)}/videos/${encodeURIComponent(video)}`, { method: 'DELETE' }),
   criarTemplate: (t: TemplateIn) => req<{ id: string }>('/api/templates', json('POST', t)),

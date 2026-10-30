@@ -2,6 +2,10 @@
 
 Formato: data · o que mudou. Mais recente primeiro. Atualize junto com cada alteração.
 
+## 2026-10-30 (gerar só este vídeo e thumbnail viral com IA)
+- **Gerar este vídeo:** botão no detalhe do corte que renderiza só aquele corte (salva antes o que estiver editado) e mostra o progresso na aba *Processo*.
+- **Thumbnail viral (IA):** o Claude lê o título, a descrição, o motivo, a nota e o texto falado do corte e sugere **3 variantes** de texto (duas linhas curtas em maiúsculas, com o gatilho de cada uma) e o **melhor momento** para o quadro. O editor de thumbnail abre já com a primeira variante e o quadro escolhido; dá para trocar de opção, ajustar zoom e salvar. Rota `POST /api/episodios/{ep}/thumb-ia/{id}`. Não gera arte nem recorta pessoas.
+
 ## 2026-10-30 (trechos clicáveis, cabeça arrastável e atalhos)
 - **Trechos clicáveis no Ajuste fino:** clicar numa parte mantida ou num buraco o seleciona. Uma barra de ação aparece com **↺ Devolver ao corte** (buraco) ou **Tirar do corte** (parte). As **bordas das partes são arrastáveis** (alças amarelas) para aumentar ou diminuir cada trecho, sem passar do vizinho. Partes coladas (menos de 0,3 s entre elas) viram uma só.
 - **Cabeça de reprodução arrastável** (o ponto branco) nas duas linhas do tempo: arrastar move o vídeo.

@@ -252,6 +252,14 @@ export function Editor({ ep, job, episodios, templates, temChave, aoRodar, aoLot
     aoRodar('analisar', false, idsAlvo ? { cortes: idsAlvo } : undefined)
   }
 
+  /** Gera só o vídeo deste corte (salva antes o que estiver editado). */
+  async function gerarEste(id: string) {
+    if (!id) return
+    if (sujo && !(await salvar())) return
+    setAba('processo')
+    aoRodar('cortar', false, { cortes: [id], opcoes: {} })
+  }
+
   /** Pede ao Claude para melhorar os cortes: ajusta limites, tira tangentes ou divide. Mantém ou substitui o original. */
   async function melhorar(ids: string[]) {
     if (!ids.length) return
@@ -509,7 +517,8 @@ export function Editor({ ep, job, episodios, templates, temChave, aoRodar, aoLot
                      aoEditar={p => editar(sel, p)} aoLimite={(lado, s) => mudarLimite(sel, lado, s)}
                      aoTodos={v => { setCortes(cs => cs.map(x => ({ ...x, velocidade: v }))); setSujo(true) }}
                      aoPrevia={previa} aoParar={() => { player.current?.pause(); parar.current = null }} aoRemover={() => remover(sel)} aoDividir={() => dividir(sel)}
-                     aoMelhorar={() => melhorar(c.id ? [c.id] : [])} podeMelhorar={!!c.id && ep.transcrito && !ocupado} />
+                     aoMelhorar={() => melhorar(c.id ? [c.id] : [])} podeMelhorar={!!c.id && ep.transcrito && !ocupado}
+                     aoGerarEste={() => gerarEste(c.id)} podeGerar={!!c.id && !ocupado} />
         ) : (
           <div className="card empty empty--sm">
             <Icon name="scissors" /><p>Selecione um corte na lista ou na linha do tempo para ajustar, ou crie um novo na posição atual.</p>
@@ -688,12 +697,12 @@ export function Editor({ ep, job, episodios, templates, temChave, aoRodar, aoLot
 }
 
 /* ------------------------------ detalhe do corte ------------------------------ */
-function CutDetail({ marca, aoMarca, i, c, ep, trans, video, tocando, agora, analise, analisando, podeAnalisar, aoAnalisar, aoEditar, aoLimite, aoTodos, aoPrevia, aoParar, aoRemover, aoDividir, aoMelhorar, podeMelhorar }: {
+function CutDetail({ marca, aoMarca, i, c, ep, trans, video, tocando, agora, analise, analisando, podeAnalisar, aoAnalisar, aoEditar, aoLimite, aoTodos, aoPrevia, aoParar, aoRemover, aoDividir, aoMelhorar, podeMelhorar, aoGerarEste, podeGerar }: {
   marca: [number, number] | null; aoMarca: (m: [number, number] | null) => void
   i: number; c: Corte; ep: Episodio; trans: Segmento[]; video: React.RefObject<HTMLVideoElement | null>; tocando: boolean
   agora: () => number; analise?: Analise; analisando: boolean; podeAnalisar: boolean; aoAnalisar: () => void
   aoEditar: (p: Partial<Corte>) => void; aoLimite: (lado: Lado, s: number) => void; aoTodos: (v: number) => void
-  aoPrevia: (ini: number, fim: number, vel?: number, pular?: [number, number][], tocar?: boolean) => void; aoParar: () => void; aoRemover: () => void; aoDividir: () => void; aoMelhorar: () => void; podeMelhorar: boolean
+  aoPrevia: (ini: number, fim: number, vel?: number, pular?: [number, number][], tocar?: boolean) => void; aoParar: () => void; aoRemover: () => void; aoDividir: () => void; aoMelhorar: () => void; podeMelhorar: boolean; aoGerarEste: () => void; podeGerar: boolean
 }) {
   const config = ep.config
   const vel = c.velocidade || 1
@@ -705,6 +714,7 @@ function CutDetail({ marca, aoMarca, i, c, ep, trans, video, tocando, agora, ana
   const eLongo = c.tipo === 'longo'
   const [thumbAberta, setThumbAberta] = useState(false)
   const [thumbSalva, setThumbSalva] = useState(false)
+  const [thumbIA, setThumbIA] = useState(false)   // abre o editor de thumbnail já pedindo sugestões ao Claude
   const [sub, setSub] = useState<'corte' | 'texto' | 'nota'>('corte')
   const fora = eLongo ? null : d < config.duracao_min ? 'curto' : d > config.duracao_max ? 'longo' : null
   const texto = useMemo(() => trans.filter(s => s.fim > c.inicio && s.inicio < c.fim).map(s => s.texto).join(' '), [trans, c.inicio, c.fim])
@@ -819,12 +829,12 @@ function CutDetail({ marca, aoMarca, i, c, ep, trans, video, tocando, agora, ana
             <Button size="sm" onClick={() => aoPrevia(mantidos(c)[0][0], mantidos(c)[0][0] + 6 * vel, vel, lacunas(c))}>Início</Button>
             <Button size="sm" onClick={() => { const ps = mantidos(c); const f = ps[ps.length - 1][1]; aoPrevia(Math.max(c.inicio, f - 6 * vel), f, vel, lacunas(c)) }}>Final</Button>
           </div>
-          {eLongo && (
-            <div className="detail__actions">
-              <Button size="sm" variant="filled" onClick={() => setThumbAberta(true)}>Criar thumbnail…</Button>
-              {thumbSalva && <span className="t-meta">Thumbnail salva.</span>}
-            </div>
-          )}
+          <div className="detail__actions">
+            <Button size="sm" variant="brand" icon="scissors" disabled={!podeGerar} onClick={aoGerarEste} title="Gera só o vídeo deste corte">Gerar este vídeo</Button>
+            {eLongo && <Button size="sm" variant="filled" icon="sparkle" disabled={!ep.transcrito || !c.id} onClick={() => { setThumbIA(true); setThumbAberta(true) }} title="O Claude lê o corte e sugere o texto e o melhor quadro">Thumbnail viral (IA)</Button>}
+            {eLongo && <Button size="sm" onClick={() => { setThumbIA(false); setThumbAberta(true) }}>Thumbnail manual…</Button>}
+          </div>
+          {thumbSalva && <span className="t-meta">Thumbnail salva na pasta do episódio.</span>}
           <ScrubCorte c={c} vel={vel} t={tempoAtual()} aoIr={abs => aoPrevia(abs, partes[partes.length - 1][1], vel, lacunas(c), tocando)} />
           <span className="t-meta">{eLongo ? 'Vídeo longo: 16:9, sem legenda queimada' : config.legendas ? 'Legenda como nos padrões de vídeo' : 'Legendas desligadas nos padrões de vídeo'}</span>
         </div>
@@ -833,7 +843,7 @@ function CutDetail({ marca, aoMarca, i, c, ep, trans, video, tocando, agora, ana
 
       {sub === 'nota' && <ViralCard analise={analise} analisando={analisando} pronto={podeAnalisar} aoAnalisar={aoAnalisar}
                  aoUsarTitulo={t => aoEditar({ titulo: t })} />}
-      {eLongo && <ThumbDialog aberto={thumbAberta} ep={ep} corte={c} aoFechar={() => setThumbAberta(false)} aoSalvar={() => { setThumbAberta(false); setThumbSalva(true) }} />}
+      {eLongo && <ThumbDialog aberto={thumbAberta} ep={ep} corte={c} autoIA={thumbIA} aoFechar={() => setThumbAberta(false)} aoSalvar={() => { setThumbAberta(false); setThumbSalva(true) }} />}
     </section>
   )
 }

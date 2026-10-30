@@ -834,6 +834,58 @@ def aprender(cfg):
     print(f"[aprender] {len(licoes)} lições gravadas")
 
 
+# ---------------------------------------------------------------- thumbnail viral (texto e quadro) com o Claude
+PROMPT_THUMB = """Você cria thumbnails virais para vídeos de YouTube feitos a partir de podcasts.
+Estilo: duas linhas de texto grande em MAIÚSCULAS sobre um quadro do apresentador, a 1ª linha em branco e a 2ª em amarelo.
+Analise o vídeo (título, descrição, motivo e o texto falado) e proponha 3 variantes de texto e o melhor momento para o quadro.
+Regras do texto: cada linha com 1 a 3 palavras (no máximo {max_chars} caracteres por linha), em português; gere curiosidade, conflito, número, promessa ou emoção;
+não repita o título; sem clickbait falso (o vídeo precisa entregar o que a thumbnail promete); sem ofensas a pessoas específicas.
+Melhor momento: um tempo em segundos DO EPISÓDIO, entre {ini:.0f} e {fim:.0f}, em que a pessoa provavelmente está mais expressiva (a frase mais forte, emocional ou engraçada). Use os tempos dos blocos do texto.
+Responda SOMENTE com JSON válido:
+{{"variantes": [{{"linha1": "...", "linha2": "...", "gatilho": "curiosidade ou conflito ou numero ou promessa ou emocao"}}],
+  "melhor_momento": 0.0, "motivo_momento": "1 frase", "dica": "1 frase sobre enquadramento ou zoom"}}
+
+TÍTULO: {titulo}
+DESCRIÇÃO: {descricao}
+MOTIVO DO CORTE: {motivo}
+NOTA/ANÁLISE: {analise}
+
+TEXTO FALADO (blocos [inicio-fim] em segundos do episódio):
+{texto}
+"""
+
+
+def sugerir_thumb(video: Path, cfg, corte, analise=None):
+    """Pede ao Claude textos de thumbnail (3 variantes) e o melhor momento do corte para o quadro."""
+    modo = modo_claude()
+    if not modo:
+        raise RuntimeError("Claude não conectado. Clique no ícone da chave no topo do painel e entre com sua conta Claude.")
+    dados = json.loads((pasta_trabalho(video) / "transcricao.json").read_text(encoding="utf-8-sig"))
+    ini, fim = float(corte["inicio"]), float(corte["fim"])
+    texto = texto_compacto(dados["segmentos"], ini, fim, bloco=15)[:9000]
+    resumo = f"{analise['veredito']} ({analise['nota']}): {analise.get('resumo', '')}" if analise else "(sem análise)"
+    prompt = PROMPT_THUMB.format(max_chars=16, ini=ini, fim=fim, titulo=corte.get("titulo", ""), descricao=corte.get("descricao", ""),
+                                 motivo=corte.get("motivo", ""), analise=resumo, texto=texto)
+    bruto = consultar_claude(prompt, {**cfg, "esforco_claude": cfg.get("esforco_thumb", "medium")}, modo)
+    m = re.search(r"\{.*\}", bruto, re.DOTALL)
+    if not m:
+        raise RuntimeError("O Claude não devolveu uma resposta válida. Tente de novo.")
+    r = json.loads(m.group(0))
+    variantes = []
+    for v in r.get("variantes", []):
+        l1, l2 = str(v.get("linha1", "")).strip().upper()[:24].strip(), str(v.get("linha2", "")).strip().upper()[:24].strip()
+        if l1 or l2:
+            variantes.append({"linha1": l1, "linha2": l2, "gatilho": str(v.get("gatilho", "")).strip()})
+    if not variantes:
+        raise RuntimeError("O Claude não sugeriu textos. Tente de novo.")
+    try:
+        momento = min(fim, max(ini, float(r.get("melhor_momento", ini + (fim - ini) / 3))))
+    except (TypeError, ValueError):
+        momento = ini + (fim - ini) / 3
+    return {"variantes": variantes[:3], "melhor_momento": round(momento, 1), "motivo_momento": str(r.get("motivo_momento", "")).strip(),
+            "dica": str(r.get("dica", "")).strip()}
+
+
 # ---------------------------------------------------------------- melhorar cortes com o Claude
 PROMPT_MELHORAR = """Você é editor de vídeo de podcast. Recebe UM corte já escolhido, a análise dele (com o que melhorar) e a transcrição do trecho
 e de uma margem antes e depois, em blocos [inicio-fim] texto, com tempos em segundos do episódio.

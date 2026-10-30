@@ -717,6 +717,25 @@ def status_render(ep: str, o: OpcoesRender):
     return {"cortes": estados, "videos": videos}
 
 
+@app.post("/api/episodios/{ep}/thumb-ia/{cid}")
+def thumb_ia(ep: str, cid: str):
+    """Claude analisa o corte (título, descrição, texto falado e nota) e sugere 3 textos de thumbnail e o melhor quadro."""
+    video = video_de(ep)
+    corte = next((c for c in garantir_ids(video) if c["id"] == cid), None)
+    if not corte:
+        raise HTTPException(404, "Corte não encontrado.")
+    if not dados_transcricao(video):
+        raise HTTPException(400, "O episódio ainda não foi transcrito.")
+    try:
+        return C.sugerir_thumb(video, C.config_do_episodio(video), corte, C.ler_analises(video).get(cid))
+    except RuntimeError as e:
+        raise HTTPException(400, str(e))
+    except subprocess.TimeoutExpired:
+        raise HTTPException(504, "O Claude demorou demais. Tente de novo.")
+    except SystemExit as e:  # consultar_claude usa sys.exit nos erros
+        raise HTTPException(502, str(e.code))
+
+
 @app.put("/api/episodios/{ep}/thumbs/{cid}")
 async def salvar_thumb(ep: str, cid: str, request: Request):
     """Recebe a thumbnail montada no painel (JPEG, até 5 MB) e grava em saida/<ep>/thumb_<id>.jpg."""

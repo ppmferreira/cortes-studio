@@ -85,3 +85,5 @@ O arquivo é servido por `/media/saida/{ep}/thumb_<id>.jpg`. Em `POST /api/rodar
 - `GET /api/desempenho` → `{resultados, licoes, correlacao}`.
 - `PUT /api/episodios/{ep}/desempenho/{id}` grava o resultado real de um vídeo postado (`plataforma`, `postado_em`, `views`, `curtidas`, `comentarios`, `compartilhamentos`, `retencao_pct`, `observacao`), junto com um retrato do corte (nota prevista, critérios, abertura, duração).
 - `DELETE /api/desempenho/{chave}` remove um resultado (`chave` = `<episódio>|<id do corte>`).
+
+`POST /api/episodios/{ep}/thumb-ia/{id}` (síncrono, usa a conta Claude) devolve `{variantes: [{linha1, linha2, gatilho}], melhor_momento, motivo_momento, dica}` para montar a thumbnail do corte.

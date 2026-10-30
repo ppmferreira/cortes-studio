@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { api } from '../api'
-import { Button, Dialog } from '../ui/kit'
+import { Button, Chip, Dialog } from '../ui/kit'
 import type { Corte, Episodio } from '../types'
 
 const W = 1280
@@ -13,13 +13,14 @@ interface Props {
   corte: Corte
   aoFechar: () => void
   aoSalvar: () => void
+  autoIA?: boolean          // ao abrir, já pede ao Claude os textos e o melhor quadro
 }
 
 /**
  * Thumbnail 1280×720 no estilo de canal de podcast: quadro do próprio vídeo, escurecido à esquerda,
  * com duas linhas grandes em Impact (branca e amarela). Tudo é desenhado no navegador e enviado como JPEG.
  */
-export function ThumbDialog({ aberto, ep, corte, aoFechar, aoSalvar }: Props) {
+export function ThumbDialog({ aberto, ep, corte, aoFechar, aoSalvar, autoIA }: Props) {
   const tela = useRef<HTMLCanvasElement>(null)
   const video = useRef<HTMLVideoElement | null>(null)
   const [pronto, setPronto] = useState(false)
@@ -34,12 +35,26 @@ export function ThumbDialog({ aberto, ep, corte, aoFechar, aoSalvar }: Props) {
   const [lado, setLado] = useState<'esquerda' | 'direita'>('esquerda')
   const [salvando, setSalvando] = useState(false)
   const [erro, setErro] = useState('')
+  const [ia, setIa] = useState<{ variantes: { linha1: string; linha2: string; gatilho: string }[]; motivo_momento: string; dica: string } | null>(null)
+  const [pensando, setPensando] = useState(false)
+  const [erroIA, setErroIA] = useState('')
+  const usar = (v: { linha1: string; linha2: string }) => { setLinha1(v.linha1); setLinha2(v.linha2) }
+  async function sugerir() {
+    setPensando(true); setErroIA('')
+    try {
+      const r = await api.thumbIA(ep.nome, corte.id)
+      setIa(r); usar(r.variantes[0])
+      setT(Math.min(corte.fim, Math.max(corte.inicio, r.melhor_momento)))
+    } catch (e) { setErroIA(e instanceof Error ? e.message : 'Não foi possível sugerir.') }
+    finally { setPensando(false) }
+  }
 
   useEffect(() => {
     if (!aberto) return
     setT(+(corte.inicio + Math.min(30, (corte.fim - corte.inicio) / 4)).toFixed(1))
     setLinha1(corte.thumb?.linha1 ?? ''); setLinha2(corte.thumb?.linha2 ?? '')
-    setZoom(1); setDx(0); setDy(0); setErro(''); setPronto(false)
+    setZoom(1); setDx(0); setDy(0); setErro(''); setPronto(false); setIa(null); setErroIA('')
+    if (autoIA) void sugerir()
     const v = document.createElement('video')
     v.muted = true; v.preload = 'auto'; v.src = `/media/entrada/${encodeURIComponent(ep.nome)}`
     v.onloadeddata = () => setPronto(true)
@@ -122,6 +137,14 @@ export function ThumbDialog({ aberto, ep, corte, aoFechar, aoSalvar }: Props) {
               <Button onClick={baixar} disabled={!pronto}>Baixar JPG</Button>
               <Button variant="brand" onClick={salvar} disabled={!pronto || salvando}>{salvando ? 'Salvando…' : 'Salvar na pasta'}</Button>
             </>}>
+      <div className="row" style={{ flexWrap: 'wrap', gap: 'var(--sp-2)', alignItems: 'center' }}>
+        <Button variant="brand" icon="sparkle" disabled={pensando} onClick={sugerir}>{pensando ? 'O Claude está analisando o corte…' : ia ? 'Sugerir de novo com IA' : 'Sugerir texto e quadro com IA'}</Button>
+        {ia?.variantes.map((v, i) => (
+          <Chip key={i} selected={linha1 === v.linha1 && linha2 === v.linha2} onClick={() => usar(v)}>{`Opção ${i + 1}: ${v.linha1} ${v.linha2}`.trim()}</Chip>
+        ))}
+      </div>
+      {erroIA && <span className="t-meta warn-text">{erroIA}</span>}
+      {ia && <span className="t-meta">{ia.motivo_momento ? `Quadro escolhido: ${ia.motivo_momento} ` : ''}{ia.dica}</span>}
       <canvas ref={tela} width={W} height={H} style={{ width: '100%', borderRadius: 8, background: '#000', aspectRatio: '16 / 9' }} />
       {!pronto && <span className="t-meta">Carregando o vídeo do episódio…</span>}
       <div className="grid-3">
