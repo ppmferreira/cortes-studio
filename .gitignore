@@ -1,0 +1,30 @@
+# Segredos e configuração do usuário (nunca versionar)
+chave_api.txt
+.env
+.env.*
+config.json
+templates.json
+
+# Dados do usuário: vídeos, transcrições, cortes, logos e logs
+entrada/
+saida/
+trabalho/
+logos/
+logs/
+
+# Dependências e builds
+.venv/
+node_modules/
+frontend/node_modules/
+frontend/dist/
+__pycache__/
+*.pyc
+
+# Ferramentas e sistema
+.claude/
+.vscode/
+.idea/
+Thumbs.db
+desktop.ini
+*.tmp
+*.tmp.py

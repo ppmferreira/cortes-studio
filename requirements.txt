@@ -1,0 +1,9 @@
+faster-whisper
+av<16
+anthropic
+fastapi
+uvicorn[standard]
+python-multipart
+yt-dlp
+pillow
+psutil

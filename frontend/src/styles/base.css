@@ -1,0 +1,25 @@
+*, *::before, *::after { box-sizing: border-box; }
+html { -webkit-text-size-adjust: 100%; }
+body {
+  margin: 0; background: var(--bg); color: var(--text-1);
+  font: var(--fw-regular) var(--fs-sm) / var(--lh-sm) var(--font);
+  -webkit-font-smoothing: antialiased;
+}
+h1, h2, h3, p { margin: 0; }
+a { color: var(--link); text-decoration: none; }
+a:hover { text-decoration: underline; }
+button, input, select, textarea { font: inherit; color: inherit; }
+button { cursor: pointer; }
+:focus-visible { outline: 2px solid var(--link); outline-offset: 2px; }
+
+/* tipografia semântica */
+.t-title { font-size: var(--fs-lg); line-height: var(--lh-lg); font-weight: var(--fw-medium); }
+.t-heading { font-size: var(--fs-md); line-height: var(--lh-md); font-weight: var(--fw-medium); }
+.t-meta { font-size: var(--fs-xs); line-height: var(--lh-xs); color: var(--text-2); }
+.t-muted { color: var(--text-2); }
+.t-num { font-variant-numeric: tabular-nums; }
+.truncate { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+
+/* barras de rolagem discretas */
+* { scrollbar-width: thin; scrollbar-color: var(--border-strong) transparent; }

@@ -1,0 +1,96 @@
+/* ==========================================================================
+   Design tokens — sistema inspirado no YouTube
+   Camadas: primitivos (escala) → semânticos (papéis) → componentes (em ui.css)
+   O tema vem de <html data-theme="dark|light"> (ver index.html / useTema).
+   ========================================================================== */
+
+:root {
+  /* ---- escala de espaçamento (base 4px) ---- */
+  --sp-1: 4px;  --sp-2: 8px;  --sp-3: 12px; --sp-4: 16px;
+  --sp-5: 24px; --sp-6: 32px; --sp-7: 48px;
+
+  /* ---- raios ---- */
+  --r-xs: 4px; --r-sm: 8px; --r-md: 12px; --r-lg: 16px; --r-pill: 999px;
+
+  /* ---- tipografia ---- */
+  --font: 'Roboto', 'Segoe UI', system-ui, -apple-system, sans-serif;
+  --font-mono: 'Roboto Mono', Consolas, 'Cascadia Mono', monospace;
+  --fs-xs: 12px;  --lh-xs: 18px;   /* meta, legendas */
+  --fs-sm: 14px;  --lh-sm: 20px;   /* corpo padrão */
+  --fs-md: 16px;  --lh-md: 24px;
+  --fs-lg: 20px;  --lh-lg: 28px;   /* título de vídeo */
+  --fs-xl: 28px;  --lh-xl: 36px;   /* números de destaque */
+  --fw-regular: 400; --fw-medium: 500; --fw-bold: 700;
+
+  /* ---- movimento ---- */
+  --ease: cubic-bezier(0.2, 0, 0, 1);
+  --dur-1: 100ms; --dur-2: 200ms; --dur-3: 300ms;
+
+  /* ---- camadas ---- */
+  --z-rail: 20; --z-appbar: 30; --z-scrim: 40; --z-dialog: 50; --z-toast: 60;
+
+  /* ---- layout ---- */
+  --appbar-h: 56px; --rail-w: 264px;
+
+  /* ---- cor da marca (iguais nos dois temas) ---- */
+  --brand: #f00;
+  --brand-hover: #cc0000;
+  --on-brand: #fff;
+}
+
+/* ---------------------------------- escuro ---------------------------------- */
+:root,
+:root[data-theme='dark'] {
+  color-scheme: dark;
+  --bg: #0f0f0f;                       /* página */
+  --surface-1: #181818;                /* cartões */
+  --surface-2: #212121;                /* menus, diálogos */
+  --surface-3: #272727;                /* chips, campos */
+  --text-1: #f1f1f1;
+  --text-2: #aaaaaa;
+  --text-3: #717171;
+  --border: rgba(255, 255, 255, 0.1);
+  --border-strong: rgba(255, 255, 255, 0.2);
+  --hover: rgba(255, 255, 255, 0.1);   /* camada de estado, como no YouTube */
+  --pressed: rgba(255, 255, 255, 0.16);
+  --link: #3ea6ff;
+  --success: #2ba640;
+  --warning: #f5a524;
+  --danger: #ff6b6b;
+  --inverse-bg: #f1f1f1;               /* chip selecionado */
+  --inverse-text: #0f0f0f;
+  --scrim: rgba(0, 0, 0, 0.6);
+  --shadow-1: 0 1px 2px rgba(0, 0, 0, 0.4);
+  --shadow-2: 0 8px 28px rgba(0, 0, 0, 0.55);
+  --track: rgba(255, 255, 255, 0.2);
+}
+
+/* ---------------------------------- claro ---------------------------------- */
+:root[data-theme='light'] {
+  color-scheme: light;
+  --bg: #ffffff;
+  --surface-1: #f9f9f9;
+  --surface-2: #ffffff;
+  --surface-3: #f2f2f2;
+  --text-1: #0f0f0f;
+  --text-2: #606060;
+  --text-3: #909090;
+  --border: rgba(0, 0, 0, 0.1);
+  --border-strong: rgba(0, 0, 0, 0.2);
+  --hover: rgba(0, 0, 0, 0.05);
+  --pressed: rgba(0, 0, 0, 0.1);
+  --link: #065fd4;
+  --success: #188038;
+  --warning: #b06000;
+  --danger: #c5221f;
+  --inverse-bg: #0f0f0f;
+  --inverse-text: #ffffff;
+  --scrim: rgba(0, 0, 0, 0.4);
+  --shadow-1: 0 1px 2px rgba(0, 0, 0, 0.12);
+  --shadow-2: 0 8px 28px rgba(0, 0, 0, 0.2);
+  --track: rgba(0, 0, 0, 0.14);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :root { --dur-1: 0ms; --dur-2: 0ms; --dur-3: 0ms; }
+}
