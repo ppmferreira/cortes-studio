@@ -12,7 +12,8 @@
 O pipeline também roda sozinho, a partir de `cortes.py`:
 
 ```
-python cortes.py transcrever|selecionar|cortar|tudo [arquivo]   # sem arquivo, processa tudo que está em entradapython cortes.py selecionar entrada\episodio.mp4 --manual         # só transcreve e grava trabalho\episodio	ranscricao.txt
+python cortes.py transcrever|selecionar|cortar|tudo [arquivo]   # sem arquivo, processa tudo que está em entrada\
+python cortes.py selecionar entrada\episodio.mp4 --manual       # só transcreve e grava trabalho\episodio\transcricao.txt
 ```
 
 `rodar.bat` roda `tudo`. Com `--manual` você pede os cortes ao Claude numa conversa, salva `trabalho\<episódio>\cortes.json` e roda `cortar`. Os resultados intermediários ficam em `trabalho\` e são reaproveitados (apague `cortes.json` para escolher de novo; mude a configuração e rode `cortar` para refazer só os vídeos). Para escolher cortes e analisar é preciso o Claude conectado (conta ou chave de API em `chave_api.txt` / variável `ANTHROPIC_API_KEY`).
